@@ -487,7 +487,9 @@
 const HORIZON_DAYS = 15;                                 // Open-Meteo gives 16 days: today + 15
 const MARGIN = { tempF: 5, rain: 10, gustMph: 5 };       // "close to a limit" margins
 const STORAGE_KEYS = { plans: 'wg.v3.plans', settings: 'wg.v3.settings', alerts: 'wg.v3.alerts', geo: 'wg.v3.geo' };
-const CHECK_INTERVAL_MS = 15 * 60 * 1000;
+const CHECK_INTERVAL_MS = 30 * 60 * 1000;               // get fresh forecasts every 30 minutes
+const TICK_MS = 60 * 1000;                               // check once a minute whether one is due
+const RETRY_MS = 5 * 60 * 1000;                          // after a failed fetch, try again in 5 minutes
 const DEFAULT_LIMITS = { minTempF: 50, maxTempF: 85, maxRain: 40, maxGustMph: 25, blockStorms: true };
 
 const STATUS_LABEL = {
@@ -512,7 +514,7 @@ const isWeather = (p) => p.weather !== false;   // older saved plans have no fla
 const state = {
     plans: [],
     alerts: [],
-    settings: { units: 'imperial', lastChecked: null, lastLimits: null },
+    settings: { units: 'imperial', lastLimits: null },
     editingId: null,
     selectedDate: null,
     view: { year: new Date().getFullYear(), month: new Date().getMonth() },
@@ -612,6 +614,14 @@ function fmtDayHeading(s) {
     if (diff === 0) return `Today · ${base}`;
     if (diff === 1) return `Tomorrow · ${base}`;
     return base;
+}
+function fmtClock(ms) { return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+function fmtAgo(ms) {
+    const min = Math.floor((Date.now() - ms) / 60000);
+    if (min < 1) return 'just now';
+    if (min < 60) return `${min} min ago`;
+    const hr = Math.floor(min / 60);
+    return `${hr} hr ago`;
 }
 function fmtHour(h) { h = ((h % 24) + 24) % 24; return `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`; }
 function fmtHourShort(h) { h = ((h % 24) + 24) % 24; return `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`; }
@@ -950,26 +960,45 @@ function changeText(c) {
 }
 
 let checking = false;
+// ZIPs of upcoming weather plans that are within forecast range.
+function activeZips() {
+    return [...new Set(state.plans
+        .filter((p) => isWeather(p) && daysBetween(localISO(), p.date) <= HORIZON_DAYS && planEndDate(p) >= new Date())
+        .map((p) => p.zip))];
+}
+
+// A ZIP is due when it has no forecast yet or its forecast is 30+ minutes old.
+// After a failed fetch it waits RETRY_MS before trying again.
+function isDue(zip) {
+    const failedAt = lastAttempt.get(zip);
+    if (failedAt) return Date.now() - failedAt >= RETRY_MS;
+    const fc = forecastCache.get(zip);
+    return !fc || Date.now() - fc.issuedAt >= CHECK_INTERVAL_MS;
+}
+
+// Oldest forecast currently shown, so the header never overstates freshness.
+function oldestForecastAt() {
+    const times = activeZips().map((z) => forecastCache.get(z)?.issuedAt).filter(Boolean);
+    return times.length ? Math.min(...times) : null;
+}
+
+const lastAttempt = new Map();   // zip -> time of the last failed fetch
+
 // force: true refetches every ZIP (the "Check forecast" button). Otherwise
-// only ZIPs with no forecast yet, or one older than CHECK_INTERVAL_MS, are fetched.
+// only ZIPs that are due are fetched.
 async function runForecastCheck({ force = false } = {}) {
     if (checking) return;
     checking = true;
     try {
-        const zips = [...new Set(state.plans
-            .filter((p) => isWeather(p) && daysBetween(localISO(), p.date) <= HORIZON_DAYS && planEndDate(p) >= new Date())
-            .map((p) => p.zip))];
-
-        const due = zips.filter((zip) => {
-            const fc = forecastCache.get(zip);
-            return force || !fc || Date.now() - fc.issuedAt > CHECK_INTERVAL_MS;
-        });
+        const due = activeZips().filter((zip) => force || isDue(zip));
 
         await Promise.all(due.map(async (zip) => {
             try {
                 forecastCache.set(zip, await WeatherProvider.getForecast(zip));
                 forecastErrors.delete(zip);
+                lastAttempt.delete(zip);
             } catch (err) {
+                lastAttempt.set(zip, Date.now());
                 console.error('Forecast failed for', zip, err);
                 forecastErrors.set(zip, err.message || "Couldn't get the forecast.");
             }
@@ -997,7 +1026,6 @@ async function runForecastCheck({ force = false } = {}) {
             }
             plan.lastStatus = ev.status;
         }
-        state.settings.lastChecked = Date.now();
         save();
     } finally {
         checking = false;
@@ -1062,9 +1090,10 @@ function renderHeader() {
     $('#todayLabel').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
     document.querySelectorAll('[data-action="units"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.units === state.settings.units)));
     $('#exportBtn').disabled = state.plans.length === 0;
-    $('#lastChecked').textContent = state.settings.lastChecked
-        ? `Forecast checked ${new Date(state.settings.lastChecked).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-        : '';
+    const updated = oldestForecastAt();
+    const lc = $('#lastChecked');
+    lc.textContent = updated ? `Weather updated ${fmtClock(updated)} (${fmtAgo(updated)})` : '';
+    lc.title = updated ? `Forecasts refresh every 30 minutes. Next update around ${fmtClock(updated + CHECK_INTERVAL_MS)}.` : '';
     renderSaveStatus();
     renderSourceStatus();
 }
@@ -1204,6 +1233,11 @@ function renderItem(p, ev) {
                 p.zip ? h('span', {}, forecastCache.get(p.zip)?.place ? `${forecastCache.get(p.zip).place} (${p.zip})` : `ZIP ${p.zip}`) : null,
                 ev.status === 'past' ? h('span', {}, fmtDate(p.date)) : null,
                 ev.confidence ? h('span', {}, `${ev.confidence} confidence`) : null,
+                ev.confidence && forecastCache.get(p.zip)
+                    ? h('span', {}, forecastErrors.has(p.zip)
+                        ? `Updated ${fmtClock(forecastCache.get(p.zip).issuedAt)}, latest update failed`
+                        : `Updated ${fmtClock(forecastCache.get(p.zip).issuedAt)}`)
+                    : null,
             )),
         h('div', { class: 'item-actions' },
             h('span', { class: 'pill' }, STATUS_LABEL[ev.status]),
@@ -1674,7 +1708,15 @@ function init() {
     syncSliders();
     render();
     runForecastCheck();
-    setInterval(() => runForecastCheck(), CHECK_INTERVAL_MS);
+    // Every minute: fetch any forecast that's 30+ minutes old, otherwise just
+    // refresh the "updated X min ago" text.
+    const tick = () => {
+        if (activeZips().some(isDue)) runForecastCheck();
+        else renderHeader();
+    };
+    setInterval(tick, TICK_MS);
+    // Browsers slow timers in background tabs, so catch up when the tab is shown again.
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
 }
 
 init();

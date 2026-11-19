@@ -25,7 +25,7 @@ weather-guard/
 
 1. For each ZIP code with upcoming plans, the page first tries `/api/forecast?zip=…`.
 2. On a storage website there is no `/api`, so the page does the work itself. It looks up the ZIP's coordinates with Open-Meteo's geocoding API (Zippopotam.us is the backup), then gets a 16-day hourly forecast: temperature, rain chance, wind, gusts and weather code.
-3. Coordinates are remembered in the browser, and forecasts are reused for 15 minutes. All plans in the same ZIP share one forecast.
+3. Forecasts refresh automatically every 30 minutes while the page is open (and right away when you come back to the tab). The header shows when the weather was last updated, and each plan shows the time of its forecast. If an update fails, the last forecast stays up, the plan says the update failed, and it tries again in 5 minutes. ZIP coordinates are remembered in the browser, and all plans in the same ZIP share one forecast.
 4. The page compares every hour of each plan against its limits.
 
 The header says **Live forecast** once real data has loaded. If the weather service can't be reached or a ZIP doesn't exist, the plan says **Forecast unavailable** with the reason. The page never shows made-up weather.
