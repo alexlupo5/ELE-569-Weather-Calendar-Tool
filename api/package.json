@@ -1,0 +1,17 @@
+{
+  "name": "weather-guard-api",
+  "version": "2.0.0",
+  "description": "Weather-Guard backend: saves plans and checks the weather every 30 minutes (Azure Functions, Open-Meteo)",
+  "private": true,
+  "main": "src/functions/*.js",
+  "scripts": {
+    "start": "func start"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.5.0",
+    "@azure/storage-blob": "^12.17.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

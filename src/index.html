@@ -1,0 +1,1900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weather-Guard Calendar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+    :root {
+        /* Layout: a form rail on the left; on the right a month grid, then a day-by-day agenda. Light, sky-tinted, white surfaces. */
+        --sky: #eaf2fa;
+        --paper: #ffffff;
+        --ink: #132a40;
+        --muted: #5d7389;
+        --line: #d8e4ef;
+        --accent: #1866d1;
+        --accent-soft: #e4eefb;
+
+        /* Semantic status colors (separate from the accent) */
+        --good: #1a9152;
+        --warn: #c27f00;
+        --bad: #d93f36;
+        --idle: #8da2b6;
+
+        --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+        --font-body: 'Figtree', 'Segoe UI', system-ui, -apple-system, sans-serif;
+        --radius: 14px;
+        --shadow: 0 1px 2px rgba(19, 42, 64, 0.06), 0 6px 20px rgba(19, 42, 64, 0.06);
+        color-scheme: light;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
+    html, body { background: var(--sky); }
+    body { color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.45; min-height: 100%; }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; letter-spacing: -0.01em; }
+    .num { font-variant-numeric: tabular-nums; }
+
+    /* ---------- Buttons ---------- */
+    .btn { display: inline-flex; align-items: center; gap: 0.4rem; border: 1px solid var(--line); background: var(--paper); padding: 0.5rem 0.9rem; border-radius: 999px; cursor: pointer; font-weight: 600; font-size: 0.9rem; transition: background 0.15s, border-color 0.15s; }
+    .btn:hover { border-color: #b9cde0; background: #f6faff; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #1258b8; border-color: #1258b8; }
+    .btn-danger { color: var(--bad); }
+    .btn-danger:hover { background: #fdf0ef; border-color: #f2c4c0; }
+    .btn-block { width: 100%; justify-content: center; padding: 0.7rem; font-size: 1rem; border-radius: 10px; }
+    .btn-link { background: none; border: none; color: var(--accent); font-weight: 600; cursor: pointer; padding: 0.2rem 0.3rem; border-radius: 6px; font-size: 0.85rem; }
+    .btn-link:hover { background: var(--accent-soft); }
+    .icon-btn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper); cursor: pointer; display: inline-grid; place-items: center; }
+    .icon-btn:hover { background: var(--accent-soft); }
+    .icon-btn svg { width: 16px; height: 16px; }
+
+    .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--paper); }
+    .segmented button { border: none; background: none; padding: 0.3rem 0.75rem; border-radius: 999px; cursor: pointer; font-weight: 600; font-size: 0.85rem; color: var(--muted); }
+    .segmented button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+    /* ---------- Header ---------- */
+    header { background: var(--paper); border-bottom: 1px solid var(--line); }
+    .header-inner { max-width: 1400px; margin: 0 auto; padding: 0.85rem 1.5rem; display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; align-items: center; justify-content: space-between; }
+    .brand { display: flex; align-items: center; gap: 0.75rem; }
+    .logo { width: 40px; height: 40px; border-radius: 12px; background: var(--accent); display: grid; place-items: center; flex-shrink: 0; }
+    .logo svg { width: 26px; height: 26px; }
+    .brand h1 { font-size: 1.35rem; line-height: 1.1; }
+    .brand p { color: var(--muted); font-size: 0.85rem; }
+    .header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    .save-status { font-size: 0.8rem; font-weight: 600; padding: 0.3rem 0.65rem; border-radius: 999px; display: inline-flex; align-items: center; gap: 0.35rem; }
+    .save-status::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .save-status.ok { color: var(--good); background: #e7f5ed; }
+    .save-status.off { color: #9a6200; background: #fdf3dc; }
+    .credit { text-align: center; font-size: 0.8rem; color: var(--muted); padding-bottom: 0.5rem; }
+    .credit a { color: var(--accent); }
+    .banner.demo { background: #fdf3dc; color: #7a5200; }
+
+    /* ---------- Layout ---------- */
+    .page { max-width: 1400px; margin: 0 auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.5rem; }
+    .board { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr); gap: 1.5rem; align-items: start; }
+    .panel { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.25rem; }
+
+    /* ---------- Form ---------- */
+    #planDialog { width: min(780px, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); padding: 0; overflow: auto; }
+    .dlg { padding: 1.4rem 1.5rem 0; display: flex; flex-direction: column; gap: 1.1rem; }
+    .dlg-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    .dlg-head h2 { font-size: 1.35rem; }
+    .dlg-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    .dlg-cols .form-section + .form-section { border-top: none; padding-top: 0; border-left: 1px solid var(--line); padding-left: 1.5rem; }
+    .dlg-foot { position: sticky; bottom: 0; background: var(--paper); display: flex; gap: 0.5rem; align-items: center; border-top: 1px solid var(--line); padding: 1rem 1.5rem; margin: 0 -1.5rem; }
+    .dlg-foot .spacer { flex: 1; }
+    dialog[open] { animation: pop 0.16s ease-out; }
+    @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+    .form-section { display: flex; flex-direction: column; gap: 0.9rem; }
+    .form-section + .form-section { border-top: 1px solid var(--line); padding-top: 1.1rem; }
+    .section-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
+    .field { display: flex; flex-direction: column; gap: 0.35rem; }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    label, .label { font-size: 0.85rem; font-weight: 600; }
+    input[type="text"], input[type="date"], input[type="time"] {
+        background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 0.55rem 0.7rem; font-size: 0.95rem; width: 100%;
+    }
+    input[type="text"]:hover, input[type="date"]:hover, input[type="time"]:hover { border-color: #b9cde0; }
+    input[type="text"]:focus, input[type="date"]:focus, input[type="time"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .slider-head { display: flex; justify-content: space-between; align-items: baseline; }
+    .slider-head output { font-weight: 700; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+    input[type="range"] { accent-color: var(--accent); width: 100%; }
+    .form-error { font-size: 0.85rem; color: var(--bad); background: #fdf0ef; border: 1px solid #f2c4c0; padding: 0.55rem 0.7rem; border-radius: 10px; }
+    .form-error[hidden] { display: none; }
+
+    .dual-slider { position: relative; height: 28px; }
+    .dual-slider .track, .dual-slider .fill { position: absolute; top: 11px; height: 6px; border-radius: 4px; }
+    .dual-slider .track { left: 0; right: 0; background: var(--line); }
+    .dual-slider .fill { background: var(--accent); }
+    .dual-slider input[type="range"] { position: absolute; left: 0; top: 0; margin: 0; height: 28px; pointer-events: none; background: none; appearance: none; -webkit-appearance: none; }
+    .dual-slider input[type="range"]::-webkit-slider-runnable-track { background: transparent; }
+    .dual-slider input[type="range"]::-moz-range-track { background: transparent; }
+    .dual-slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--paper); border: 3px solid var(--accent); cursor: pointer; pointer-events: auto; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); }
+    .dual-slider input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--paper); border: 3px solid var(--accent); cursor: pointer; pointer-events: auto; }
+
+    .switch { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.7rem 0.85rem; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+    .switch:hover { border-color: #b9cde0; }
+    .switch strong { display: block; font-size: 0.95rem; }
+    .switch small { display: block; color: var(--muted); font-size: 0.8rem; font-weight: 500; }
+    .switch input { appearance: none; -webkit-appearance: none; width: 42px; height: 24px; border-radius: 999px; background: #c5d3e0; position: relative; cursor: pointer; flex-shrink: 0; transition: background 0.15s; }
+    .switch input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: transform 0.15s; }
+    .switch input:checked { background: var(--accent); }
+    .switch input:checked::after { transform: translateX(18px); }
+    .limits { display: flex; flex-direction: column; gap: 0.9rem; }
+    .check { display: flex; align-items: center; gap: 0.55rem; cursor: pointer; font-size: 0.9rem; font-weight: 500; }
+    .check input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
+
+    /* ---------- Summary tiles ---------- */
+    .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; }
+    .tile { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 0.75rem 0.9rem; border-top: 4px solid var(--c); box-shadow: var(--shadow); }
+    .tile strong { font-family: var(--font-display); font-size: 1.6rem; line-height: 1; display: block; font-variant-numeric: tabular-nums; }
+    .tile span { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+
+    /* ---------- Status colors ---------- */
+    .s-safe { --c: var(--good); }
+    .s-watch { --c: var(--warn); }
+    .s-breach { --c: var(--bad); }
+    .s-pending, .s-loading, .s-past { --c: var(--idle); }
+    .s-event { --c: #6457d6; }
+    .s-error { --c: var(--idle); }
+
+    .pill { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 999px; color: var(--c); background: color-mix(in srgb, var(--c) 13%, white); white-space: nowrap; }
+    .pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+    .s-pending .pill, .s-past .pill, .s-loading .pill { color: var(--muted); }
+
+    /* ---------- Calendar ---------- */
+    .cal-head { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .cal-head h2 { font-size: 1.5rem; }
+    .cal-nav { display: flex; gap: 0.4rem; align-items: center; }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .cal-dow { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); text-align: center; padding: 0.45rem 0; background: #f4f8fc; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .cal-day { min-height: 98px; text-align: left; padding: 0.4rem; background: var(--paper); border: none; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); cursor: pointer; display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+    .cal-day:hover { background: #f6faff; }
+    .cal-day.weekend { background: #f9fbfe; }
+    .cal-day.other .cal-num { color: #b3c3d2; }
+    .cal-day.past .cal-num { color: #9aaabb; }
+    .cal-day.selected { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+    .cal-num { font-size: 0.85rem; font-weight: 700; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; font-variant-numeric: tabular-nums; }
+    .cal-day.today .cal-num { background: var(--accent); color: #fff; }
+    .cal-events { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .ev { display: flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 6px; background: color-mix(in srgb, var(--c) 12%, white); white-space: nowrap; overflow: hidden; min-width: 0; }
+    .ev::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--c); flex-shrink: 0; }
+    .ev span { overflow: hidden; text-overflow: ellipsis; }
+    .ev.s-past { opacity: 0.6; }
+    .ev.more { background: none; color: var(--muted); }
+    .ev.more::before { display: none; }
+    .legend { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 0.85rem; font-size: 0.8rem; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .legend span::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+
+    /* ---------- Agenda ---------- */
+    .agenda-tools { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .agenda-head { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
+    .agenda-head h2 { font-size: 1.3rem; }
+    .banner { margin-top: 0.75rem; font-size: 0.85rem; background: var(--accent-soft); border-radius: 10px; padding: 0.55rem 0.8rem; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .day-group { margin-top: 1.1rem; }
+    .day-label { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.5rem; display: flex; gap: 0.5rem; align-items: center; }
+    .day-label::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+    .items { display: flex; flex-direction: column; gap: 0.75rem; }
+
+    .item { display: grid; grid-template-columns: 96px minmax(0, 1fr); border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 12px; background: var(--paper); overflow: hidden; }
+    .item.editing { box-shadow: 0 0 0 3px var(--accent-soft); border-color: var(--accent); border-left-color: var(--c); }
+    .item.s-past { opacity: 0.65; }
+    .item-time { padding: 0.85rem 0.6rem 0.85rem 0.85rem; border-right: 1px solid var(--line); background: #fbfdff; }
+    .item-time strong { display: block; white-space: nowrap; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+    .item-time span { white-space: nowrap; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .item-body { padding: 0.8rem 0.95rem; display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
+    .item-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; }
+    .item-title { font-weight: 700; font-size: 1.05rem; overflow-wrap: anywhere; }
+    .item-sub { font-size: 0.82rem; color: var(--muted); display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-top: 0.15rem; }
+    .tag { font-size: 0.7rem; font-weight: 700; color: var(--accent); background: var(--accent-soft); padding: 0.05rem 0.45rem; border-radius: 999px; }
+    .item-actions { display: flex; gap: 0.4rem; align-items: center; flex-shrink: 0; }
+
+    .stats { display: flex; flex-wrap: wrap; gap: 0.4rem 1.25rem; font-size: 0.85rem; }
+    .stat { display: flex; flex-direction: column; }
+    .stat dt { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .stat dd { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .stat dd small { font-weight: 500; color: var(--muted); font-size: 0.75rem; }
+    .stat.flag dd { color: var(--bad); }
+
+    .hours { display: flex; flex-direction: column; gap: 3px; }
+    .strip { display: flex; gap: 3px; }
+    .hr { flex: 1; min-width: 0; height: 12px; border-radius: 4px; }
+    .hr.lv-ok { background: color-mix(in srgb, var(--good) 55%, white); }
+    .hr.lv-near { background: color-mix(in srgb, var(--warn) 65%, white); }
+    .hr.lv-bad { background: color-mix(in srgb, var(--bad) 75%, white); }
+    .hr-labels { display: flex; gap: 3px; font-size: 0.68rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .hr-labels span { flex: 1; min-width: 0; }
+
+    .note { font-size: 0.85rem; color: var(--muted); }
+    .box { font-size: 0.85rem; padding: 0.55rem 0.75rem; border-radius: 10px; }
+    .box ul { margin: 0.2rem 0 0 1.1rem; }
+    .box.bad { background: #fdf0ef; color: #9c2a23; }
+    .box.near { background: #fdf5e2; color: #7a5200; }
+    .box.change { background: var(--accent-soft); color: #164b94; }
+    .box.suggest { background: #e8f6ee; color: #135f37; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .box.suggest.none { background: #f4f8fc; color: var(--muted); }
+
+    .empty { text-align: center; color: var(--muted); padding: 2.5rem 1rem; border: 1.5px dashed var(--line); border-radius: 12px; margin-top: 1rem; display: flex; flex-direction: column; align-items: center; gap: 0.9rem; }
+
+    details.past-plans { margin-top: 1.25rem; }
+    details.past-plans summary, details.alerts summary { cursor: pointer; font-weight: 700; color: var(--muted); font-size: 0.9rem; }
+    details.past-plans .items { margin-top: 0.75rem; }
+
+    /* ---------- Alerts ---------- */
+    details.alerts summary { font-family: var(--font-display); font-size: 1.1rem; color: var(--ink); }
+    .alert-note { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; max-width: 65ch; }
+    .alert-list { list-style: none; margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.88rem; }
+    .alert-list li { padding: 0.55rem 0.75rem; border-radius: 10px; background: color-mix(in srgb, var(--c) 8%, white); border-left: 3px solid var(--c); }
+    .alert-list time { color: var(--muted); font-size: 0.75rem; display: block; }
+
+    /* ---------- Dialog + toast ---------- */
+    dialog { margin: auto; border: none; border-radius: var(--radius); padding: 1.25rem; width: min(560px, calc(100vw - 2rem)); box-shadow: 0 20px 60px rgba(19, 42, 64, 0.25); color: var(--ink); background: var(--paper); }
+    dialog::backdrop { background: rgba(19, 42, 64, 0.35); }
+    dialog h3 { font-size: 1.2rem; margin-bottom: 0.4rem; }
+    dialog p { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.75rem; }
+    dialog textarea { width: 100%; height: 180px; font-family: ui-monospace, Consolas, monospace; font-size: 0.75rem; border: 1px solid var(--line); border-radius: 10px; padding: 0.6rem; resize: vertical; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+
+    .toast { position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 0.65rem 1rem; border-radius: 999px; display: flex; gap: 1rem; align-items: center; box-shadow: 0 10px 30px rgba(19, 42, 64, 0.3); font-size: 0.9rem; z-index: 50; max-width: calc(100vw - 2rem); }
+    .toast[hidden] { display: none; }
+    .toast button { background: none; border: none; color: #8cc2ff; font-weight: 700; cursor: pointer; }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+    @media (max-width: 1100px) {
+        .board { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 980px) {
+        .page { padding: 1rem; }
+    }
+    @media (max-width: 640px) {
+        .header-inner { padding: 0.75rem 1rem; }
+        .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .cal-day { min-height: 58px; padding: 0.25rem; }
+        .cal-num { width: 22px; height: 22px; font-size: 0.75rem; }
+        .cal-events { flex-direction: row; flex-wrap: wrap; gap: 3px; }
+        .ev { width: 8px; height: 8px; padding: 0; border-radius: 50%; background: var(--c); }
+        .ev::before, .ev span { display: none; }
+        .ev.more { width: auto; height: auto; font-size: 0.6rem; background: none; }
+        .ev.more span { display: inline; }
+        .item { grid-template-columns: 1fr; }
+        .item-time { border-right: none; border-bottom: 1px solid var(--line); padding: 0.5rem 0.85rem; display: flex; gap: 0.4rem; align-items: baseline; }
+        .dlg-cols { grid-template-columns: 1fr; }
+        .dlg-cols .form-section + .form-section { border-left: none; padding-left: 0; border-top: 1px solid var(--line); padding-top: 1.1rem; }
+        #planDialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; }
+        .dlg { padding: 1rem 1rem 0; }
+        .dlg-foot { margin: 0 -1rem; padding: 0.85rem 1rem; }
+    }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-inner">
+        <div class="brand">
+            <div class="logo" aria-hidden="true">
+                <svg viewBox="0 0 32 32" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round">
+                    <circle cx="12" cy="12" r="4.5" fill="#ffd166" stroke="#ffd166"/>
+                    <path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.5 1.5M16.9 16.9l1.5 1.5M5.6 18.4l1.5-1.5M16.9 7.1l1.5-1.5" stroke="#ffd166"/>
+                    <path d="M14 26h11a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.4 1.6A3.8 3.8 0 0 0 14 26z" fill="#fff" stroke="#fff"/>
+                </svg>
+            </div>
+            <div>
+                <h1>Weather-Guard</h1>
+                <p id="todayLabel"></p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <span class="save-status" id="sourceStatus" hidden></span>
+            <span class="save-status" id="saveStatus" role="status"></span>
+            <span class="note" id="lastChecked"></span>
+            <button class="btn btn-primary" type="button" data-action="new">+ Add plan</button>
+            <button class="btn" type="button" data-action="refresh" title="Get the latest forecast now">Check forecast</button>
+            <button class="btn" type="button" data-action="export" id="exportBtn">Export calendar</button>
+            <div class="segmented" role="group" aria-label="Units">
+                <button type="button" data-action="units" data-units="imperial">°F</button>
+                <button type="button" data-action="units" data-units="metric">°C</button>
+            </div>
+        </div>
+    </div>
+</header>
+
+<main class="page">
+
+
+        <section class="summary" id="summary" aria-label="Next 7 days at a glance"></section>
+
+        <div class="board">
+        <section class="panel" aria-labelledby="calTitle">
+            <div class="cal-head">
+                <h2 id="calTitle"></h2>
+                <div class="cal-nav">
+                    <button class="icon-btn" type="button" data-action="prev-month" aria-label="Previous month">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 3 5 8l5 5"/></svg>
+                    </button>
+                    <button class="btn" type="button" data-action="this-month">Today</button>
+                    <button class="icon-btn" type="button" data-action="next-month" aria-label="Next month">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 3 5 5-5 5"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="cal-grid" id="calGrid"></div>
+            <div class="legend">
+                <span class="s-safe">Looks good</span>
+                <span class="s-watch">Close to a limit</span>
+                <span class="s-breach">Bad weather</span>
+                <span class="s-pending">No forecast yet</span>
+                <span class="s-event">Regular event</span>
+                <span style="margin-left:auto">Double-click a day to add a plan</span>
+            </div>
+        </section>
+
+        <section class="panel" aria-labelledby="agendaTitle">
+            <div class="agenda-head">
+                <h2 id="agendaTitle">Upcoming</h2>
+                <div class="agenda-tools">
+                    <button class="btn-link" type="button" data-action="clear-filter" id="clearFilterBtn" hidden>Show all days</button>
+                    <button class="btn" type="button" data-action="new" id="agendaAddBtn">+ Add plan</button>
+                </div>
+            </div>
+            <div id="agenda"></div>
+        </section>
+        </div>
+
+        <section class="panel">
+            <details class="alerts">
+                <summary id="alertsSummary">Alert log</summary>
+                <p class="alert-note" id="alertNote">
+                    A message is logged only when a plan turns bad or clears up again, so nobody gets pinged every hour.
+                </p>
+                <ul class="alert-list" id="alertList"></ul>
+            </details>
+        </section>
+    <p class="credit">Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a></p>
+</main>
+
+<dialog id="planDialog" aria-labelledby="formHeading">
+    <form id="planForm" class="dlg" novalidate>
+        <div class="dlg-head">
+            <h2 id="formHeading">New plan</h2>
+            <button class="icon-btn" type="button" data-action="close-plan" aria-label="Close">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m4 4 8 8M12 4l-8 8"/></svg>
+            </button>
+        </div>
+
+        <div class="dlg-cols">
+            <div class="form-section">
+                <div class="field">
+                    <label for="title">What are you doing?</label>
+                    <input type="text" id="title" placeholder="Anything: a hike, a game, a wedding…" maxlength="80" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label for="date">Date</label>
+                    <input type="date" id="date">
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="start">Starts</label>
+                        <input type="time" id="start" value="09:00">
+                    </div>
+                    <div class="field">
+                        <label for="end">Ends</label>
+                        <input type="time" id="end" value="12:00">
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="zip" id="zipLabel">ZIP code</label>
+                    <input type="text" id="zip" placeholder="02816" inputmode="numeric" maxlength="5" autocomplete="postal-code">
+                </div>
+            </div>
+
+            <div class="form-section">
+                <label class="switch">
+                    <span>
+                        <strong>Check the weather</strong>
+                        <small>Warn me if the forecast looks bad</small>
+                    </span>
+                    <input type="checkbox" id="weatherOn" role="switch" checked>
+                </label>
+
+                <div class="limits" id="limitsBox">
+                <div class="section-title">
+                    <span>Warn me if</span>
+                    <button type="button" class="btn-link" data-action="reset-limits">Reset</button>
+                </div>
+
+                <div class="field">
+                    <div class="slider-head">
+                        <span class="label" id="tempLabel">Temperature is outside</span>
+                        <output id="tempDisplay"></output>
+                    </div>
+                    <div class="dual-slider">
+                        <div class="track"></div>
+                        <div class="fill" id="tempFill"></div>
+                        <input type="range" id="minTemp" aria-label="Lowest okay temperature" step="1">
+                        <input type="range" id="maxTemp" aria-label="Highest okay temperature" step="1">
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="slider-head">
+                        <label for="maxRain">Rain chance is above</label>
+                        <output id="rainDisplay"></output>
+                    </div>
+                    <input type="range" id="maxRain" min="0" max="100" step="5">
+                </div>
+
+                <div class="field">
+                    <div class="slider-head">
+                        <label for="maxGust">Wind gusts are above</label>
+                        <output id="gustDisplay"></output>
+                    </div>
+                    <input type="range" id="maxGust" step="1">
+                </div>
+
+                <label class="check">
+                    <input type="checkbox" id="blockStorms">
+                    <span>Thunderstorms are possible</span>
+                </label>
+                </div>
+
+                <p class="note" id="noWeatherNote" hidden>This is a regular event. It goes on your calendar with no forecast checks or alerts.</p>
+            </div>
+        </div>
+
+        <p class="form-error" id="formError" role="alert" hidden></p>
+
+        <div class="dlg-foot">
+            <button type="button" class="btn btn-danger" id="deleteBtn" data-action="delete" hidden>Delete plan</button>
+            <span class="spacer"></span>
+            <button type="button" class="btn" data-action="close-plan">Cancel</button>
+            <button type="button" class="btn btn-primary" id="saveBtn" data-action="save">Save plan</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="exportDialog" aria-labelledby="exportTitle">
+    <h3 id="exportTitle">Export to your calendar</h3>
+    <p>Download the file and open it with Google Calendar, Outlook or Apple Calendar. If the download is blocked here, copy the text and save it as a file ending in .ics.</p>
+    <textarea id="icsText" readonly aria-label="Calendar file contents"></textarea>
+    <div class="dialog-actions">
+        <button class="btn" type="button" data-action="close-export">Close</button>
+        <button class="btn" type="button" data-action="copy-ics">Copy text</button>
+        <button class="btn btn-primary" type="button" data-action="download-ics">Download .ics</button>
+    </div>
+</dialog>
+
+<dialog id="codeDialog" aria-labelledby="codeTitle">
+    <h3 id="codeTitle">Enter the access code</h3>
+    <p>This calendar is protected. Enter the access code you set in Azure. It's remembered in this browser.</p>
+    <div class="field">
+        <label for="codeInput">Access code</label>
+        <input type="text" id="codeInput" autocomplete="off">
+    </div>
+    <div class="dialog-actions">
+        <button class="btn" type="button" data-action="close-code">Cancel</button>
+        <button class="btn btn-primary" type="button" data-action="save-code">Continue</button>
+    </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden>
+    <span id="toastMsg"></span>
+    <button type="button" id="toastAction" hidden></button>
+</div>
+
+<script>
+'use strict';
+
+/* ==========================================================================
+   CONFIG
+   ========================================================================== */
+
+/* ---- Azure backend ----------------------------------------------------------
+   Paste your Function App's address here, ending in /api, for example
+   'https://weatherguard-api.azurewebsites.net/api'. Plans are then saved in
+   Azure, and Azure checks the weather every 30 minutes even when this page is
+   closed. Leave it empty to keep plans only in this browser.
+   ----------------------------------------------------------------------------- */
+const API_BASE = 'https://weathercalendar-api-d7heh9guhad9d3du.denmarkeast-01.azurewebsites.net/api';
+const SERVER_MODE = API_BASE !== '';
+
+const HORIZON_DAYS = 15;                                 // Open-Meteo gives 16 days: today + 15
+const MARGIN = { tempF: 5, rain: 10, gustMph: 5 };       // "close to a limit" margins
+const STORAGE_KEYS = { plans: 'wg.v3.plans', settings: 'wg.v3.settings', alerts: 'wg.v3.alerts', geo: 'wg.v3.geo', code: 'wg.v3.code' };
+const CHECK_INTERVAL_MS = 30 * 60 * 1000;               // get fresh forecasts every 30 minutes
+const TICK_MS = 60 * 1000;                               // check once a minute whether one is due
+const RETRY_MS = 5 * 60 * 1000;                          // after a failed fetch, try again in 5 minutes
+const DEFAULT_LIMITS = { minTempF: 50, maxTempF: 85, maxRain: 40, maxGustMph: 25, blockStorms: true };
+
+const STATUS_LABEL = {
+    safe: 'Looks good',
+    watch: 'Close to a limit',
+    breach: 'Bad weather',
+    pending: 'No forecast yet',
+    past: 'Done',
+    loading: 'Checking…',
+    event: 'Regular event',
+    error: 'Forecast unavailable',
+};
+
+const isWeather = (p) => p.weather !== false;   // older saved plans have no flag, so they count as weather plans
+
+/* ==========================================================================
+   STATE
+   Weather values are stored in one unit system (°F, mph). The °F/°C switch
+   only changes what's displayed, never what's stored or compared.
+   ========================================================================== */
+
+const state = {
+    plans: [],
+    alerts: [],
+    settings: { units: 'imperial', lastLimits: null },
+    editingId: null,
+    selectedDate: null,
+    serverError: null,      // set when the Azure backend can't be reached
+    lastRunAt: null,        // when Azure last ran the background weather check
+    view: { year: new Date().getFullYear(), month: new Date().getMonth() },
+};
+
+let formLimits = { ...DEFAULT_LIMITS };
+const forecastCache = new Map();     // zip -> { place, issuedAt, days: { 'YYYY-MM-DD': hourly[24] } }
+const forecastErrors = new Map();    // zip -> message, when the last fetch for that ZIP failed
+const $ = (sel) => document.querySelector(sel);
+
+/* ==========================================================================
+   STORAGE
+   Browser storage for now. Later, swap the three methods for calls to your
+   Azure API (e.g. GET/PUT /api/plans) and nothing else needs to change.
+   ========================================================================== */
+
+const Store = {
+    available: (() => {
+        try {
+            const k = '__wg_test__';
+            window.localStorage.setItem(k, '1');
+            window.localStorage.removeItem(k);
+            return true;
+        } catch {
+            return false;
+        }
+    })(),
+    read(key) {
+        if (!this.available) return null;
+        try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
+    },
+    write(key, value) {
+        if (!this.available) return false;
+        try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; }
+    },
+    has(key) {
+        if (!this.available) return false;
+        try { return localStorage.getItem(key) !== null; } catch { return false; }
+    },
+};
+
+let lastSaveOk = Store.available;
+
+function load() {
+    Object.assign(state.settings, Store.read(STORAGE_KEYS.settings) || {});
+    if (SERVER_MODE) return;   // plans and alerts come from Azure (loadFromServer)
+    const plans = Store.read(STORAGE_KEYS.plans);
+    // Earlier versions added example plans; those are dropped here.
+    state.plans = Array.isArray(plans)
+        ? plans.filter((p) => p && !p.example && p.id && p.title && p.date && p.start && p.end && p.limits && typeof p.limits.minTempF === 'number')
+        : [];
+    const alerts = Store.read(STORAGE_KEYS.alerts);
+    state.alerts = Array.isArray(alerts) ? alerts : [];
+}
+
+function save() {
+    if (SERVER_MODE) {
+        // Plans are saved to Azure one at a time (persistPlan); only settings stay here.
+        Store.write(STORAGE_KEYS.settings, state.settings);
+        renderSaveStatus();
+        return !state.serverError;
+    }
+    const ok = [
+        Store.write(STORAGE_KEYS.plans, state.plans),
+        Store.write(STORAGE_KEYS.alerts, state.alerts),
+        Store.write(STORAGE_KEYS.settings, state.settings),
+    ].every(Boolean);
+    lastSaveOk = ok;
+    renderSaveStatus();
+    return ok;
+}
+
+/* ==========================================================================
+   AZURE BACKEND (only used when API_BASE is set)
+   ========================================================================== */
+
+class ServerError extends Error {
+    constructor(message, status) { super(message); this.status = status; }
+}
+
+async function serverCall(method, path, body) {
+    const headers = { Accept: 'application/json' };
+    const code = Store.read(STORAGE_KEYS.code);
+    if (code) headers['x-access-code'] = code;
+    if (body) headers['Content-Type'] = 'application/json';
+    let res;
+    try {
+        res = await fetch(`${API_BASE}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    } catch {
+        throw new ServerError("Can't reach the Weather-Guard server. Check your internet connection.", 0);
+    }
+    let data = null;
+    try { data = await res.json(); } catch { /* not JSON */ }
+    if (!res.ok) throw new ServerError((data && data.error) || `The server returned an error (${res.status}).`, res.status);
+    return data;
+}
+
+let lastServerLoad = 0;   // when plans were last loaded from Azure
+let lastServerTry = 0;    // when the last attempt was made (successful or not)
+
+// Get every plan, the alert log and the last background check time from Azure.
+async function loadFromServer() {
+    lastServerTry = Date.now();
+    try {
+        const data = await serverCall('GET', '/plans');
+        lastServerLoad = Date.now();
+        state.plans = data.plans;
+        state.alerts = data.alerts;
+        state.lastRunAt = data.lastRunAt;
+        state.serverError = null;
+        return true;
+    } catch (err) {
+        state.serverError = err;
+        if (err.status === 401) openCodeDialog();
+        return false;
+    }
+}
+
+const planPayload = (p) => ({ title: p.title, date: p.date, start: p.start, end: p.end, zip: p.zip, weather: p.weather !== false, limits: p.limits });
+
+// Save one plan. In browser-only mode that's just save().
+async function persistPlan(p) {
+    if (!SERVER_MODE) return save();
+    try {
+        const { plan } = await serverCall('PUT', `/plans/${encodeURIComponent(p.id)}`, planPayload(p));
+        const i = state.plans.findIndex((x) => x.id === p.id);
+        if (i >= 0) state.plans[i] = plan; else state.plans.push(plan);
+        state.serverError = null;
+        return true;
+    } catch (err) {
+        toast(`Couldn't save to Azure: ${err.message}`);
+        if (err.status === 401) openCodeDialog();
+        await loadFromServer();   // show what's actually saved
+        return false;
+    }
+}
+
+async function removePlanFromServer(id) {
+    if (!SERVER_MODE) return save();
+    try {
+        await serverCall('DELETE', `/plans/${encodeURIComponent(id)}`);
+        return true;
+    } catch (err) {
+        toast(`Couldn't delete in Azure: ${err.message}`);
+        await loadFromServer();
+        return false;
+    }
+}
+
+function openCodeDialog() {
+    const dlg = $('#codeDialog');
+    if (dlg.open) return;
+    $('#codeInput').value = Store.read(STORAGE_KEYS.code) || '';
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    setTimeout(() => $('#codeInput').focus(), 0);
+}
+
+async function saveCode() {
+    Store.write(STORAGE_KEYS.code, $('#codeInput').value.trim());
+    $('#codeDialog').close();
+    await runForecastCheck({ force: true });
+}
+
+/* ==========================================================================
+   UNITS
+   ========================================================================== */
+
+const isMetric = () => state.settings.units === 'metric';
+const U = {
+    toDispT: (f) => (isMetric() ? (f - 32) * 5 / 9 : f),
+    fromDispT: (v) => (isMetric() ? v * 9 / 5 + 32 : v),
+    toDispW: (mph) => (isMetric() ? mph * 1.609344 : mph),
+    fromDispW: (v) => (isMetric() ? v / 1.609344 : v),
+    tUnit: () => (isMetric() ? '°C' : '°F'),
+    wUnit: () => (isMetric() ? 'km/h' : 'mph'),
+    t: (f) => `${Math.round(U.toDispT(f))}${U.tUnit()}`,
+    tn: (f) => `${Math.round(U.toDispT(f))}°`,
+    w: (mph) => `${Math.round(U.toDispW(mph))} ${U.wUnit()}`,
+};
+
+/* ==========================================================================
+   DATES (local time; never toISOString() for calendar dates)
+   ========================================================================== */
+
+function localISO(d = new Date()) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function parseISO(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+function addDays(s, n) { const d = parseISO(s); d.setDate(d.getDate() + n); return localISO(d); }
+function daysBetween(a, b) { return Math.round((parseISO(b) - parseISO(a)) / 86400000); }
+function fmtDate(s) { return parseISO(s).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); }
+function fmtDayHeading(s) {
+    const diff = daysBetween(localISO(), s);
+    const base = parseISO(s).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    if (diff === 0) return `Today · ${base}`;
+    if (diff === 1) return `Tomorrow · ${base}`;
+    return base;
+}
+function fmtClock(ms) { return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+function fmtAgo(ms) {
+    const min = Math.floor((Date.now() - ms) / 60000);
+    if (min < 1) return 'just now';
+    if (min < 60) return `${min} min ago`;
+    const hr = Math.floor(min / 60);
+    return `${hr} hr ago`;
+}
+function fmtHour(h) { h = ((h % 24) + 24) % 24; return `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`; }
+function fmtHourShort(h) { h = ((h % 24) + 24) % 24; return `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`; }
+function fmtTime(hhmm) {
+    const [h, m] = hhmm.split(':').map(Number);
+    return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+function shiftTime(hhmm, hours) {
+    const [h, m] = hhmm.split(':').map(Number);
+    return `${String(h + hours).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+function hoursOf(plan) {
+    const [sh] = plan.start.split(':').map(Number);
+    const [eh, em] = plan.end.split(':').map(Number);
+    let end = em > 0 ? eh + 1 : eh;
+    if (end <= sh) end = sh + 1;
+    end = Math.min(end, 24);
+    const out = [];
+    for (let h = sh; h < end; h++) out.push(h);
+    return out;
+}
+function planEndDate(plan) {
+    const d = parseISO(plan.date);
+    const [eh, em] = plan.end.split(':').map(Number);
+    d.setHours(eh, em, 0, 0);
+    return d;
+}
+function rangeText(hours) {
+    const hs = [...hours].sort((a, b) => a - b);
+    const groups = [];
+    for (const h of hs) {
+        const g = groups[groups.length - 1];
+        if (g && h === g[g.length - 1] + 1) g.push(h); else groups.push([h]);
+    }
+    return groups.map((g) => {
+        const a = fmtHour(g[0]);
+        const b = fmtHour(g[g.length - 1] + 1);
+        return a.slice(-2) === b.slice(-2) ? `${a.slice(0, -3)}–${b}` : `${a}–${b}`;
+    }).join(', ');
+}
+
+/* ==========================================================================
+   WEATHER DATA
+   --------------------------------------------------------------------------
+   Sources, tried in this order:
+   1. Azure:  GET /api/forecast?zip=02816. The Function in /api looks up the
+              ZIP, calls Open-Meteo, caches the result and returns it.
+   2. Direct: if this page has no /api (an Azure Storage static website,
+              or index.html opened as a file), the browser looks up each ZIP
+              and calls Open-Meteo itself. Open-Meteo allows that.
+   If neither answers, the plan says "Forecast unavailable". The page never
+   shows made-up weather.
+
+   Every source returns the same shape:
+     { zip, place, timezone, issuedAt, days: { 'YYYY-MM-DD': [hourly rows] } }
+   Hourly row: { hour, tempF, rain (0-100, or null if unknown), windMph, gustMph, storm, code }
+   ========================================================================== */
+
+class ForecastError extends Error {}       // a real answer ("ZIP not found", "service down"): show it
+class SourceUnavailable extends Error {}   // this source can't be reached from here: try the next one
+
+const OPEN_METEO = {
+    geocode: 'https://geocoding-api.open-meteo.com/v1/search',
+    forecast: 'https://api.open-meteo.com/v1/forecast',
+};
+const THUNDER_CODES = new Set([95, 96, 97, 99]);
+
+async function fetchFromApi(zip) {
+    let res;
+    try {
+        res = await fetch(`${API_BASE || '/api'}/forecast?zip=${encodeURIComponent(zip)}`, { headers: { Accept: 'application/json' } });
+    } catch {
+        throw new SourceUnavailable('No API on this page');
+    }
+    // Without the API, a static host answers with an HTML page instead of JSON.
+    if (!(res.headers.get('content-type') || '').includes('application/json')) {
+        throw new SourceUnavailable('No API on this page');
+    }
+    const body = await res.json();
+    if (!res.ok) throw new ForecastError(body.error || `The forecast service returned ${res.status}.`);
+    return body;
+}
+
+async function getJsonDirect(url) {
+    let res;
+    try { res = await fetch(url); } catch { throw new SourceUnavailable(`Can't reach ${new URL(url).host}`); }
+    if (!res.ok) throw new ForecastError(`${new URL(url).host} returned ${res.status}.`);
+    return res.json();
+}
+
+// ZIP -> { latitude, longitude, place }. Open-Meteo's geocoder accepts postal
+// codes; Zippopotam.us is the backup if Open-Meteo has no exact match.
+async function lookupZip(zip) {
+    let loose = null;
+    let reached = false;
+    try {
+        const geo = await getJsonDirect(`${OPEN_METEO.geocode}?${new URLSearchParams({ name: zip, count: '10', countryCode: 'US', language: 'en', format: 'json' })}`);
+        reached = true;
+        const results = geo.results || [];
+        const exact = results.find((r) => (r.postcodes || []).includes(zip));
+        if (exact) return { latitude: exact.latitude, longitude: exact.longitude, place: [exact.name, exact.admin1].filter(Boolean).join(', ') };
+        if (results[0]) loose = { latitude: results[0].latitude, longitude: results[0].longitude, place: [results[0].name, results[0].admin1].filter(Boolean).join(', ') };
+    } catch (err) {
+        if (err instanceof SourceUnavailable) throw err;   // no internet / blocked: don't guess
+    }
+    try {
+        const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
+        reached = true;
+        if (res.ok) {
+            const place = (await res.json()).places?.[0];
+            if (place) return { latitude: Number(place.latitude), longitude: Number(place.longitude), place: `${place['place name']}, ${place['state abbreviation']}` };
+        }
+    } catch {
+        // backup unavailable; fall through
+    }
+    if (loose) return loose;
+    if (!reached) throw new SourceUnavailable("Can't reach the ZIP lookup");
+    throw new ForecastError(`Couldn't find ZIP code ${zip}. Check the number and edit the plan.`);
+}
+
+async function fetchDirect(zip) {
+    const known = Store.read(STORAGE_KEYS.geo) || {};
+    let loc = known[zip];
+    if (!loc) {
+        loc = await lookupZip(zip);
+        known[zip] = loc;
+        Store.write(STORAGE_KEYS.geo, known);
+    }
+    const params = new URLSearchParams({
+        latitude: loc.latitude.toFixed(4),
+        longitude: loc.longitude.toFixed(4),
+        hourly: 'temperature_2m,precipitation_probability,wind_speed_10m,wind_gusts_10m,weather_code',
+        temperature_unit: 'fahrenheit',
+        wind_speed_unit: 'mph',
+        timezone: 'auto',
+        forecast_days: '16',
+    });
+    const data = await getJsonDirect(`${OPEN_METEO.forecast}?${params}`);
+    return {
+        zip, place: loc.place, latitude: loc.latitude, longitude: loc.longitude,
+        timezone: data.timezone, issuedAt: Date.now(), source: 'Open-Meteo', days: hourlyToDays(data.hourly),
+    };
+}
+
+// Same conversion as api/src/lib/weather.js: parallel arrays -> rows by date and hour.
+function hourlyToDays(hourly) {
+    const days = {};
+    hourly.time.forEach((time, i) => {
+        const tempF = hourly.temperature_2m?.[i];
+        if (tempF == null) return;
+        const date = time.slice(0, 10);
+        const hour = Number(time.slice(11, 13));
+        const wind = hourly.wind_speed_10m?.[i] ?? 0;
+        const code = hourly.weather_code?.[i] ?? null;
+        (days[date] ||= [])[hour] = {
+            hour, tempF,
+            rain: hourly.precipitation_probability?.[i] ?? null,
+            windMph: wind,
+            gustMph: hourly.wind_gusts_10m?.[i] ?? wind,
+            storm: THUNDER_CODES.has(code),
+            code,
+        };
+    });
+    return days;
+}
+
+const WeatherProvider = {
+    mode: null,      // 'api' | 'direct', settled by the first answer
+    async getForecast(zip) {
+        if (this.mode === null || this.mode === 'api') {
+            try {
+                const fc = await fetchFromApi(zip);
+                this.mode = 'api';
+                return fc;
+            } catch (err) {
+                if (!(err instanceof SourceUnavailable)) { this.mode = 'api'; throw err; }
+                if (this.mode === 'api') throw new ForecastError("Can't reach the forecast service.");
+            }
+        }
+        if (this.mode === null || this.mode === 'direct') {
+            try {
+                const fc = await fetchDirect(zip);
+                this.mode = 'direct';
+                return fc;
+            } catch (err) {
+                if (!(err instanceof SourceUnavailable)) { this.mode = 'direct'; throw err; }
+            }
+        }
+        throw new ForecastError("Can't reach the weather service. Check your internet connection, then click Check forecast.");
+    },
+};
+
+function describeCode(c) {
+    if (c == null) return null;
+    if (c === 0) return 'Clear';
+    if (c <= 2) return 'Partly cloudy';
+    if (c === 3) return 'Cloudy';
+    if (c === 45 || c === 48) return 'Fog';
+    if (c >= 51 && c <= 57) return 'Drizzle';
+    if (c >= 61 && c <= 67) return 'Rain';
+    if (c >= 71 && c <= 77) return 'Snow';
+    if (c >= 80 && c <= 82) return 'Showers';
+    if (c === 85 || c === 86) return 'Snow showers';
+    if (c >= 95) return 'Thunderstorms';
+    return null;
+}
+
+
+/* ==========================================================================
+   EVALUATION (comparisons always in °F / mph)
+   ========================================================================== */
+
+const maxOf = (xs, k) => Math.max(...xs.map((x) => x[k]));
+const minOf = (xs, k) => Math.min(...xs.map((x) => x[k]));
+
+const RULES = [
+    { key: 'cold', bad: (x, t) => x.tempF < t.minTempF, near: (x, t) => x.tempF < t.minTempF + MARGIN.tempF,
+      describe: (xs, t) => `Cold: down to ${U.t(minOf(xs, 'tempF'))} (you set ${U.t(t.minTempF)})` },
+    { key: 'hot', bad: (x, t) => x.tempF > t.maxTempF, near: (x, t) => x.tempF > t.maxTempF - MARGIN.tempF,
+      describe: (xs, t) => `Hot: up to ${U.t(maxOf(xs, 'tempF'))} (you set ${U.t(t.maxTempF)})` },
+    { key: 'rain', bad: (x, t) => x.rain != null && x.rain > t.maxRain, near: (x, t) => x.rain != null && x.rain > t.maxRain - MARGIN.rain,
+      describe: (xs, t) => `Rain: up to ${maxOf(xs, 'rain')}% chance (you set ${t.maxRain}%)` },
+    { key: 'gust', bad: (x, t) => x.gustMph > t.maxGustMph, near: (x, t) => x.gustMph > t.maxGustMph - MARGIN.gustMph,
+      describe: (xs, t) => `Wind gusts: up to ${U.w(maxOf(xs, 'gustMph'))} (you set ${U.w(t.maxGustMph)})` },
+    { key: 'storm', bad: (x, t) => t.blockStorms && x.storm, near: () => false,
+      describe: () => 'Thunderstorms possible' },
+];
+const RULE = Object.fromEntries(RULES.map((r) => [r.key, r]));
+
+function issueText(issue, t) {
+    return `${RULE[issue.key].describe(issue.hours, t)}, ${rangeText(issue.hours.map((x) => x.hour))}`;
+}
+
+function checkWindow(day, hours, t) {
+    const hs = hours.map((h) => day[h]).filter(Boolean);
+    if (!hs.length) return null;
+    const violations = [];
+    const near = [];
+    const levels = new Map(hs.map((x) => [x.hour, 'ok']));
+    for (const rule of RULES) {
+        const bad = hs.filter((x) => rule.bad(x, t));
+        if (bad.length) {
+            violations.push({ key: rule.key, hours: bad });
+            bad.forEach((x) => levels.set(x.hour, 'bad'));
+            continue;
+        }
+        const close = hs.filter((x) => rule.near(x, t));
+        if (close.length) {
+            near.push({ key: rule.key, hours: close });
+            close.forEach((x) => { if (levels.get(x.hour) === 'ok') levels.set(x.hour, 'near'); });
+        }
+    }
+    return {
+        violations, near,
+        hours: hs.map((x) => ({ ...x, level: levels.get(x.hour) })),
+        tempLo: minOf(hs, 'tempF'), tempHi: maxOf(hs, 'tempF'),
+        rainMax: rainMaxOf(hs), gustMax: maxOf(hs, 'gustMph'), windMax: maxOf(hs, 'windMph'),
+        storm: hs.some((x) => x.storm),
+        worstCode: hs.reduce((m, x) => (x.code != null && (m == null || x.code > m) ? x.code : m), null),
+    };
+}
+
+function rainMaxOf(xs) {
+    const vals = xs.map((x) => x.rain).filter((v) => v != null);
+    return vals.length ? Math.max(...vals) : null;
+}
+
+function evaluate(plan) {
+    const daysOut = daysBetween(localISO(), plan.date);
+    if (planEndDate(plan) < new Date()) return { status: 'past' };
+    if (!isWeather(plan)) return { status: 'event' };
+    if (daysOut > HORIZON_DAYS) return { status: 'pending', daysOut, availableOn: addDays(plan.date, -HORIZON_DAYS) };
+    const day = forecastCache.get(plan.zip)?.days[plan.date];
+    if (!day) {
+        const err = forecastErrors.get(plan.zip);
+        return err ? { status: 'error', message: err } : { status: 'loading' };
+    }
+    const res = checkWindow(day, hoursOf(plan), plan.limits);
+    if (!res) return { status: 'error', message: 'There is no forecast for these hours yet.' };
+    res.status = res.violations.length ? 'breach' : res.near.length ? 'watch' : 'safe';
+    res.daysOut = daysOut;
+    res.confidence = daysOut <= 2 ? 'High' : daysOut <= 6 ? 'Medium' : 'Low';
+    return res;
+}
+
+function suggestWindow(plan) {
+    const fc = forecastCache.get(plan.zip);
+    if (!fc) return null;
+    const hrs = hoursOf(plan);
+    const dur = hrs.length;
+    const origStart = hrs[0];
+    const today = localISO();
+    const nowH = new Date().getHours();
+    let best = null;
+    for (const off of [0, 1, -1, 2, -2, 3]) {
+        const date = addDays(plan.date, off);
+        const day = fc.days[date];
+        if (!day || date < today) continue;
+        for (let s = 6; s + dur <= 22; s++) {
+            if (off === 0 && s === origStart) continue;
+            if (date === today && s <= nowH) continue;
+            const r = checkWindow(day, Array.from({ length: dur }, (_, i) => s + i), plan.limits);
+            if (!r || r.violations.length) continue;
+            const score = Math.abs(off) * 24 + Math.abs(s - origStart) + (r.near.length ? 40 : 0);
+            if (!best || score < best.score) best = { date, shift: s - origStart, score, watch: r.near.length > 0 };
+        }
+    }
+    return best;
+}
+
+/* ==========================================================================
+   FORECAST CHECK (stands in for the hourly Azure timer Function)
+   ========================================================================== */
+
+const snapshotKey = (p) => `${p.date}|${p.start}|${p.end}|${p.zip}`;
+
+function diffSnapshots(a, b) {
+    const out = [];
+    if (a.rainMax != null && b.rainMax != null && Math.abs(b.rainMax - a.rainMax) >= 10) out.push({ key: 'rain', from: a.rainMax, to: b.rainMax });
+    if (Math.abs(b.tempHi - a.tempHi) >= 3) out.push({ key: 'tempHi', from: a.tempHi, to: b.tempHi });
+    if (Math.abs(b.tempLo - a.tempLo) >= 3) out.push({ key: 'tempLo', from: a.tempLo, to: b.tempLo });
+    if (Math.abs(b.gustMax - a.gustMax) >= 5) out.push({ key: 'gust', from: a.gustMax, to: b.gustMax });
+    if (a.storm !== b.storm) out.push({ key: 'storm', from: a.storm, to: b.storm });
+    return out;
+}
+
+function changeText(c) {
+    switch (c.key) {
+        case 'rain': return `rain ${c.from}% → ${c.to}%`;
+        case 'tempHi': return `high ${U.t(c.from)} → ${U.t(c.to)}`;
+        case 'tempLo': return `low ${U.t(c.from)} → ${U.t(c.to)}`;
+        case 'gust': return `gusts ${U.w(c.from)} → ${U.w(c.to)}`;
+        case 'storm': return c.to ? 'storms now possible' : 'storm risk gone';
+        default: return '';
+    }
+}
+
+let checking = false;
+// ZIPs of upcoming weather plans that are within forecast range.
+function activeZips() {
+    return [...new Set(state.plans
+        .filter((p) => isWeather(p) && daysBetween(localISO(), p.date) <= HORIZON_DAYS && planEndDate(p) >= new Date())
+        .map((p) => p.zip))];
+}
+
+// A ZIP is due when it has no forecast yet or its forecast is 30+ minutes old.
+// After a failed fetch it waits RETRY_MS before trying again.
+function isDue(zip) {
+    const failedAt = lastAttempt.get(zip);
+    if (failedAt) return Date.now() - failedAt >= RETRY_MS;
+    const fc = forecastCache.get(zip);
+    return !fc || Date.now() - fc.issuedAt >= CHECK_INTERVAL_MS;
+}
+
+// Oldest forecast currently shown, so the header never overstates freshness.
+function oldestForecastAt() {
+    const times = activeZips().map((z) => forecastCache.get(z)?.issuedAt).filter(Boolean);
+    return times.length ? Math.min(...times) : null;
+}
+
+const lastAttempt = new Map();   // zip -> time of the last failed fetch
+
+// force: true refetches every ZIP (the "Check forecast" button). Otherwise
+// only ZIPs that are due are fetched.
+async function runForecastCheck({ force = false } = {}) {
+    if (checking) return;
+    checking = true;
+    try {
+        // With Azure, pick up the latest plans, statuses and alerts first
+        // (the background check may have changed them while the page was closed).
+        if (SERVER_MODE && !(await loadFromServer())) return;
+        const due = activeZips().filter((zip) => force || isDue(zip));
+
+        await Promise.all(due.map(async (zip) => {
+            try {
+                forecastCache.set(zip, await WeatherProvider.getForecast(zip));
+                forecastErrors.delete(zip);
+                lastAttempt.delete(zip);
+            } catch (err) {
+                lastAttempt.set(zip, Date.now());
+                console.error('Forecast failed for', zip, err);
+                forecastErrors.set(zip, err.message || "Couldn't get the forecast.");
+            }
+        }));
+
+        // With Azure, the background check tracks changes and alerts; the page only displays them.
+        for (const plan of SERVER_MODE ? [] : state.plans) {
+            const ev = evaluate(plan);
+            if (!['safe', 'watch', 'breach'].includes(ev.status)) { plan.lastStatus = ev.status; continue; }
+
+            const snap = { tempLo: ev.tempLo, tempHi: ev.tempHi, rainMax: ev.rainMax, gustMax: ev.gustMax, storm: ev.storm };
+            const key = snapshotKey(plan);
+            if (plan.lastSnapshot && plan.snapshotKey === key) {
+                const changes = diffSnapshots(plan.lastSnapshot, snap);
+                if (changes.length) plan.changes = changes;
+            } else {
+                plan.changes = [];
+            }
+            plan.lastSnapshot = snap;
+            plan.snapshotKey = key;
+
+            if (ev.status === 'breach' && plan.lastStatus !== 'breach') {
+                logAlert(plan, 'breach', ev.violations.map((v) => issueText(v, plan.limits)).join('; '));
+            } else if (plan.lastStatus === 'breach' && ev.status !== 'breach') {
+                logAlert(plan, 'clear', 'The forecast is back within your limits.');
+            }
+            plan.lastStatus = ev.status;
+        }
+        save();
+    } finally {
+        checking = false;
+        render();
+    }
+}
+
+function logAlert(plan, kind, text) {
+    state.alerts.unshift({ at: Date.now(), planId: plan.id, title: plan.title, kind, text });
+    state.alerts = state.alerts.slice(0, 50);
+}
+
+/* ==========================================================================
+   DOM HELPER (text always goes in as text, never as HTML)
+   ========================================================================== */
+
+function h(tag, props, ...kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(props || {})) {
+        if (v == null || v === false) continue;
+        if (k === 'class') el.className = v;
+        else if (k === 'dataset') Object.assign(el.dataset, v);
+        else if (k.startsWith('aria-') || ['role', 'title', 'type', 'datetime'].includes(k)) el.setAttribute(k, v);
+        else el[k] = v;
+    }
+    for (const c of kids.flat(Infinity)) {
+        if (c == null || c === false) continue;
+        el.append(c instanceof Node ? c : String(c));
+    }
+    return el;
+}
+
+const newId = () => (window.crypto?.randomUUID ? crypto.randomUUID() : `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`);
+
+/* ==========================================================================
+   RENDER
+   ========================================================================== */
+
+function render() {
+    const evals = new Map(state.plans.map((p) => [p.id, evaluate(p)]));
+    renderHeader();
+    renderSummary(evals);
+    renderCalendar(evals);
+    renderAgenda(evals);
+    renderAlerts();
+}
+
+function renderSaveStatus() {
+    const el = $('#saveStatus');
+    if (SERVER_MODE) {
+        if (state.serverError) {
+            el.className = 'save-status off';
+            el.textContent = state.serverError.status === 401 ? 'Access code needed' : "Can't reach Azure";
+            el.title = state.serverError.message;
+        } else {
+            el.className = 'save-status ok';
+            el.textContent = 'Saved in Azure';
+            el.title = 'Plans are saved in Azure, which checks the weather every 30 minutes, even when this page is closed.'
+                + (state.lastRunAt ? ` Last background check: ${fmtClock(state.lastRunAt)}.` : '');
+        }
+        return;
+    }
+    if (Store.available && lastSaveOk) {
+        el.className = 'save-status ok';
+        el.textContent = 'Saved in this browser';
+        el.title = 'Your plans are kept in this browser until the Azure backend is set up.';
+    } else {
+        el.className = 'save-status off';
+        el.textContent = "Can't save here";
+        el.title = 'This view blocks browser storage, so plans disappear when it reloads. Open the page on its own to keep them.';
+    }
+}
+
+function renderHeader() {
+    $('#todayLabel').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    document.querySelectorAll('[data-action="units"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.units === state.settings.units)));
+    $('#exportBtn').disabled = state.plans.length === 0;
+    const updated = oldestForecastAt();
+    const lc = $('#lastChecked');
+    lc.textContent = updated ? `Weather updated ${fmtClock(updated)} (${fmtAgo(updated)})` : '';
+    lc.title = !updated ? '' : SERVER_MODE
+        ? `Azure checks the weather every 30 minutes, even when this page is closed.${state.lastRunAt ? ` Last background check: ${fmtClock(state.lastRunAt)}.` : ''}`
+        : `Forecasts refresh every 30 minutes while this page is open. Next update around ${fmtClock(updated + CHECK_INTERVAL_MS)}.`;
+    $('#alertNote').textContent = SERVER_MODE
+        ? 'Azure checks every plan every 30 minutes, even when this page is closed, and logs a message when a plan turns bad or clears up again.'
+        : 'A message is logged only when a plan turns bad or clears up again, so nobody gets pinged every hour.';
+    renderSaveStatus();
+    renderSourceStatus();
+}
+
+function renderSourceStatus() {
+    const el = $('#sourceStatus');
+    const mode = WeatherProvider.mode;
+    el.hidden = !mode;
+    if (mode) {
+        el.className = 'save-status ok';
+        el.textContent = 'Live forecast';
+        el.title = mode === 'api' ? 'From Open-Meteo, through your Azure API' : 'From Open-Meteo, fetched by this page';
+    }
+}
+
+function renderSummary(evals) {
+    const counts = { safe: 0, watch: 0, breach: 0, pending: 0 };
+    for (const p of state.plans) {
+        const s = evals.get(p.id).status;
+        if (s in counts) counts[s] += 1;
+    }
+    const tile = (cls, n, label) => h('div', { class: `tile ${cls}` }, h('strong', {}, n), h('span', {}, label));
+    $('#summary').replaceChildren(
+        tile('s-safe', counts.safe, 'look good'),
+        tile('s-watch', counts.watch, 'close to a limit'),
+        tile('s-breach', counts.breach, 'have bad weather'),
+        tile('s-pending', counts.pending, `more than ${HORIZON_DAYS} days out`),
+    );
+}
+
+function renderCalendar(evals) {
+    const { year, month } = state.view;
+    $('#calTitle').textContent = new Date(year, month, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+    const grid = $('#calGrid');
+    grid.replaceChildren();
+    ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach((d) => grid.append(h('div', { class: 'cal-dow' }, d)));
+
+    const byDate = {};
+    for (const p of state.plans) (byDate[p.date] ||= []).push(p);
+
+    const today = localISO();
+    const first = new Date(year, month, 1);
+    const weeks = Math.ceil((first.getDay() + new Date(year, month + 1, 0).getDate()) / 7);
+
+    for (let i = 0; i < weeks * 7; i++) {
+        const d = new Date(year, month, 1 - first.getDay() + i);
+        const iso = localISO(d);
+        const plans = (byDate[iso] || []).sort((a, b) => a.start.localeCompare(b.start));
+        const cls = ['cal-day'];
+        if (d.getMonth() !== month) cls.push('other');
+        if (d.getDay() === 0 || d.getDay() === 6) cls.push('weekend');
+        if (iso === today) cls.push('today');
+        if (iso < today) cls.push('past');
+        if (state.selectedDate === iso) cls.push('selected');
+
+        grid.append(h('button', {
+            type: 'button',
+            class: cls.join(' '),
+            dataset: { action: 'day', date: iso },
+            'aria-label': `${fmtDate(iso)}, ${plans.length} plan${plans.length === 1 ? '' : 's'}`,
+            'aria-pressed': String(state.selectedDate === iso),
+        },
+            h('span', { class: 'cal-num' }, d.getDate()),
+            h('div', { class: 'cal-events' },
+                plans.slice(0, 3).map((p) => {
+                    const s = evals.get(p.id).status;
+                    return h('span', { class: `ev s-${s}`, title: `${fmtTime(p.start)} ${p.title}: ${STATUS_LABEL[s]}` }, h('span', {}, p.title));
+                }),
+                plans.length > 3 ? h('span', { class: 'ev more' }, h('span', {}, `+${plans.length - 3} more`)) : null,
+            ),
+        ));
+    }
+}
+
+function renderAgenda(evals) {
+    const box = $('#agenda');
+    box.replaceChildren();
+    const sel = state.selectedDate;
+    $('#agendaTitle').textContent = sel ? fmtDayHeading(sel) : 'Upcoming';
+    $('#clearFilterBtn').hidden = !sel;
+    $('#agendaAddBtn').hidden = !!(sel && sel < localISO());
+
+    if (SERVER_MODE && state.serverError) {
+        box.append(h('div', { class: 'banner demo' },
+            h('span', {}, state.serverError.message),
+            h('button', { type: 'button', class: 'btn-link', dataset: { action: state.serverError.status === 401 ? 'enter-code' : 'retry-server' } },
+                state.serverError.status === 401 ? 'Enter access code' : 'Try again')));
+    }
+
+    const plans = sel ? state.plans.filter((p) => p.date === sel) : state.plans;
+    const key = (p) => `${p.date} ${p.start}`;
+    const upcoming = plans.filter((p) => evals.get(p.id).status !== 'past').sort((a, b) => key(a).localeCompare(key(b)));
+    const past = plans.filter((p) => evals.get(p.id).status === 'past').sort((a, b) => key(b).localeCompare(key(a)));
+
+    if (SERVER_MODE && !lastServerLoad) {
+        // Nothing loaded yet: either still loading, or the banner above explains the problem.
+        if (!state.serverError) box.append(h('p', { class: 'note', style: 'margin-top:0.75rem' }, 'Loading your plans from Azure…'));
+        return;
+    }
+
+    if (!upcoming.length && !past.length) {
+        box.append(h('div', { class: 'empty' },
+            h('div', {}, sel
+                ? 'Nothing planned this day.'
+                : 'No plans yet.'),
+            h('div', { class: 'agenda-tools' },
+                sel && sel < localISO() ? null : h('button', { type: 'button', class: 'btn btn-primary', dataset: { action: 'new', date: sel || '' } }, sel ? 'Add a plan on this day' : '+ Add plan'))));
+        return;
+    }
+
+    if (!upcoming.length && sel) {
+        box.append(h('p', { class: 'note', style: 'margin-top:0.75rem' }, 'No upcoming plans this day.'));
+    }
+
+    const groups = new Map();
+    for (const p of upcoming) {
+        if (!groups.has(p.date)) groups.set(p.date, []);
+        groups.get(p.date).push(p);
+    }
+    for (const [date, ps] of groups) {
+        box.append(h('div', { class: 'day-group' },
+            sel ? null : h('div', { class: 'day-label' }, fmtDayHeading(date)),
+            h('div', { class: 'items' }, ps.map((p) => renderItem(p, evals.get(p.id))))));
+    }
+
+    if (past.length) {
+        const det = h('details', { class: 'past-plans', open: !!sel },
+            h('summary', {}, `Past plans (${past.length})`),
+            h('div', { class: 'items' }, past.map((p) => renderItem(p, evals.get(p.id)))));
+        box.append(det);
+    }
+}
+
+function renderItem(p, ev) {
+    const t = p.limits;
+    const item = h('article', { class: `item s-${ev.status}${state.editingId === p.id ? ' editing' : ''}` });
+
+    item.append(h('div', { class: 'item-time' },
+        h('strong', {}, fmtTime(p.start)),
+        h('span', {}, `to ${fmtTime(p.end)}`)));
+
+    const body = h('div', { class: 'item-body' });
+    item.append(body);
+
+    body.append(h('div', { class: 'item-top' },
+        h('div', {},
+            h('div', { class: 'item-title' }, p.title),
+            h('div', { class: 'item-sub' },
+                p.zip ? h('span', {}, forecastCache.get(p.zip)?.place ? `${forecastCache.get(p.zip).place} (${p.zip})` : `ZIP ${p.zip}`) : null,
+                ev.status === 'past' ? h('span', {}, fmtDate(p.date)) : null,
+                ev.confidence ? h('span', {}, `${ev.confidence} confidence`) : null,
+                ev.confidence && forecastCache.get(p.zip)
+                    ? h('span', {}, forecastErrors.has(p.zip)
+                        ? `Updated ${fmtClock(forecastCache.get(p.zip).issuedAt)}, latest update failed`
+                        : `Updated ${fmtClock(forecastCache.get(p.zip).issuedAt)}`)
+                    : null,
+            )),
+        h('div', { class: 'item-actions' },
+            h('span', { class: 'pill' }, STATUS_LABEL[ev.status]),
+            h('button', { type: 'button', class: 'btn-link', dataset: { action: 'edit', id: p.id }, 'aria-label': `Edit ${p.title}` }, 'Edit'))));
+
+    if (ev.status === 'pending') {
+        body.append(h('p', { class: 'note' }, `Forecasts reach ${HORIZON_DAYS + 1} days ahead, so checking starts ${fmtDate(ev.availableOn)}.`));
+        return item;
+    }
+    if (ev.status === 'past' || ev.status === 'event') return item;
+    if (ev.status === 'loading') {
+        body.append(h('p', { class: 'note' }, 'Getting the forecast…'));
+        return item;
+    }
+    if (ev.status === 'error') {
+        body.append(h('p', { class: 'note' }, ev.message));
+        return item;
+    }
+
+    const bad = new Set(ev.violations.map((v) => v.key));
+    const stat = (label, value, limit, flagged) =>
+        h('div', { class: `stat${flagged ? ' flag' : ''}` },
+            h('dt', {}, label),
+            h('dd', {}, value, ' ', h('small', {}, limit)));
+
+    body.append(h('dl', { class: 'stats' },
+        stat('Temp', `${U.tn(ev.tempLo)}–${U.t(ev.tempHi)}`, `ok ${U.tn(t.minTempF)}–${U.t(t.maxTempF)}`, bad.has('cold') || bad.has('hot')),
+        stat('Rain', ev.rainMax == null ? 'Not yet' : `${ev.rainMax}%`, `max ${t.maxRain}%`, bad.has('rain')),
+        stat('Gusts', U.w(ev.gustMax), `max ${U.w(t.maxGustMph)}`, bad.has('gust')),
+        stat('Storms', ev.storm ? 'Possible' : 'None', '', bad.has('storm')),
+        describeCode(ev.worstCode) ? stat('Sky', describeCode(ev.worstCode), 'at worst', false) : null,
+    ));
+
+    const every = ev.hours.length <= 8 ? 1 : ev.hours.length <= 14 ? 2 : 3;
+    body.append(h('div', { class: 'hours', role: 'img', 'aria-label': 'Hour by hour: green is fine, amber is close to a limit, red is outside your limits' },
+        h('div', { class: 'strip' }, ev.hours.map((x) => h('div', {
+            class: `hr lv-${x.level}`,
+            title: `${fmtHour(x.hour)}: ${[describeCode(x.code), U.t(x.tempF), x.rain == null ? null : `${x.rain}% rain`, `gusts ${U.w(x.gustMph)}`].filter(Boolean).join(', ')}`,
+        }))),
+        h('div', { class: 'hr-labels' }, ev.hours.map((x, i) => h('span', {}, i % every === 0 ? fmtHourShort(x.hour) : '')))));
+
+    if (ev.violations.length) {
+        body.append(h('div', { class: 'box bad' },
+            h('strong', {}, 'Outside your limits'),
+            h('ul', {}, ev.violations.map((v) => h('li', {}, issueText(v, t))))));
+    }
+    if (ev.near.length) {
+        body.append(h('div', { class: 'box near' },
+            h('strong', {}, 'Close to your limits'),
+            h('ul', {}, ev.near.map((v) => h('li', {}, issueText(v, t))))));
+    }
+    if (p.changes?.length) {
+        const txt = p.changes.map(changeText).join(', ');
+        body.append(h('div', { class: 'box change' }, `Forecast changed: ${txt}.`));
+    }
+    if (ev.status === 'breach') {
+        const s = suggestWindow(p);
+        if (s) {
+            const ns = shiftTime(p.start, s.shift);
+            const ne = shiftTime(p.end, s.shift);
+            body.append(h('div', { class: 'box suggest' },
+                h('span', {}, `Better time: ${fmtDate(s.date)}, ${fmtTime(ns)} to ${fmtTime(ne)}${s.watch ? ' (close to a limit)' : ''}`),
+                h('button', { type: 'button', class: 'btn', dataset: { action: 'move', id: p.id, date: s.date, shift: String(s.shift) } }, 'Move it there')));
+        } else {
+            body.append(h('div', { class: 'box suggest none' }, 'No better time of the same length in the next few days.'));
+        }
+    }
+    return item;
+}
+
+function renderAlerts() {
+    const list = $('#alertList');
+    list.replaceChildren();
+    $('#alertsSummary').textContent = `Alert log (${state.alerts.length})`;
+    if (!state.alerts.length) {
+        list.append(h('li', { class: 's-pending' }, 'No alerts yet.'));
+        return;
+    }
+    for (const a of state.alerts) {
+        list.append(h('li', { class: a.kind === 'breach' ? 's-breach' : 's-safe' },
+            h('time', { datetime: new Date(a.at).toISOString() }, new Date(a.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })),
+            h('strong', {}, a.kind === 'breach' ? `${a.title}: bad weather. ` : `${a.title}: all clear. `),
+            a.text));
+    }
+}
+
+/* ==========================================================================
+   FORM
+   ========================================================================== */
+
+function syncSliders() {
+    const minS = $('#minTemp');
+    const maxS = $('#maxTemp');
+    const gust = $('#maxGust');
+    const [tLo, tHi] = isMetric() ? [-18, 43] : [0, 110];
+    const [gLo, gHi] = isMetric() ? [8, 113] : [5, 70];
+    for (const s of [minS, maxS]) { s.min = tLo; s.max = tHi; }
+    gust.min = gLo; gust.max = gHi;
+
+    minS.value = Math.round(U.toDispT(formLimits.minTempF));
+    maxS.value = Math.round(U.toDispT(formLimits.maxTempF));
+    $('#maxRain').value = formLimits.maxRain;
+    gust.value = Math.round(U.toDispW(formLimits.maxGustMph));
+    $('#blockStorms').checked = formLimits.blockStorms;
+    updateSliderLabels();
+}
+
+function updateSliderLabels() {
+    const minS = $('#minTemp');
+    const maxS = $('#maxTemp');
+    const lo = +minS.min;
+    const hi = +minS.max;
+    const a = ((+minS.value - lo) / (hi - lo)) * 100;
+    const b = ((+maxS.value - lo) / (hi - lo)) * 100;
+    $('#tempFill').style.left = `${a}%`;
+    $('#tempFill').style.width = `${b - a}%`;
+    minS.style.zIndex = +minS.value > hi - (hi - lo) * 0.1 ? 3 : 1;
+    maxS.style.zIndex = 2;
+    $('#tempDisplay').textContent = `${minS.value}–${maxS.value}${U.tUnit()}`;
+    $('#rainDisplay').textContent = `${$('#maxRain').value}%`;
+    $('#gustDisplay').textContent = `${$('#maxGust').value} ${U.wUnit()}`;
+}
+
+function onTempInput(which) {
+    const minS = $('#minTemp');
+    const maxS = $('#maxTemp');
+    if (+minS.value >= +maxS.value) {
+        if (which === 'min') minS.value = +maxS.value - 1;
+        else maxS.value = +minS.value + 1;
+    }
+    if (which === 'min') {
+        formLimits.minTempF = U.fromDispT(+minS.value);
+        formLimits.maxTempF = Math.max(formLimits.maxTempF, U.fromDispT(+maxS.value));
+    } else {
+        formLimits.maxTempF = U.fromDispT(+maxS.value);
+        formLimits.minTempF = Math.min(formLimits.minTempF, U.fromDispT(+minS.value));
+    }
+    updateSliderLabels();
+}
+
+function syncWeatherToggle() {
+    const on = $('#weatherOn').checked;
+    $('#limitsBox').hidden = !on;
+    $('#noWeatherNote').hidden = on;
+    $('#zipLabel').textContent = on ? 'ZIP code' : 'ZIP code (optional)';
+}
+
+function showFormError(msg) {
+    const el = $('#formError');
+    el.textContent = msg || '';
+    el.hidden = !msg;
+}
+
+function defaultLimits() {
+    return { ...DEFAULT_LIMITS, ...(state.settings.lastLimits || {}) };
+}
+
+function resetForm() {
+    $('#title').value = '';
+    $('#start').value = '09:00';
+    $('#end').value = '12:00';
+    $('#date').value = state.selectedDate && state.selectedDate >= localISO() ? state.selectedDate : '';
+    formLimits = defaultLimits();
+    syncSliders();
+    $('#weatherOn').checked = true;
+    syncWeatherToggle();
+    showFormError('');
+}
+
+function setDateMin() { $('#date').min = state.editingId ? '' : localISO(); }
+
+function setFormMode() {
+    const editing = !!state.editingId;
+    $('#formHeading').textContent = editing ? 'Edit plan' : 'New plan';
+    $('#saveBtn').textContent = editing ? 'Save changes' : 'Save plan';
+    $('#deleteBtn').hidden = !editing;
+    setDateMin();
+}
+
+function openPlanDialog() {
+    const dlg = $('#planDialog');
+    if (!dlg.open) {
+        if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    }
+    setTimeout(() => $('#title').focus(), 0);
+}
+
+function closePlanDialog() {
+    const dlg = $('#planDialog');
+    if (dlg.open) dlg.close();
+}
+
+function openNew(date) {
+    state.editingId = null;
+    setFormMode();
+    resetForm();
+    if (date && date >= localISO()) $('#date').value = date;
+    openPlanDialog();
+}
+
+function startEdit(id) {
+    const p = state.plans.find((x) => x.id === id);
+    if (!p) return;
+    state.editingId = id;
+    setFormMode();
+    $('#title').value = p.title;
+    $('#date').value = p.date;
+    $('#start').value = p.start;
+    $('#end').value = p.end;
+    $('#zip').value = p.zip;
+    formLimits = { ...p.limits };
+    syncSliders();
+    $('#weatherOn').checked = isWeather(p);
+    syncWeatherToggle();
+    showFormError('');
+    render();
+    openPlanDialog();
+}
+
+async function savePlan() {
+    const title = $('#title').value.trim();
+    const date = $('#date').value;
+    const start = $('#start').value;
+    const end = $('#end').value;
+    const zip = $('#zip').value.trim();
+
+    if (!title) { showFormError('Give the plan a name.'); $('#title').focus(); return; }
+    if (!date) { showFormError('Pick a date.'); $('#date').focus(); return; }
+    if (!state.editingId && date < localISO()) { showFormError('That date has already passed. Pick today or later.'); return; }
+    if (!start || !end) { showFormError('Set a start and end time.'); return; }
+    if (end <= start) { showFormError('The end time needs to be after the start time.'); $('#end').focus(); return; }
+    const weather = $('#weatherOn').checked;
+    if (weather && !/^\d{5}$/.test(zip)) { showFormError('Enter a 5-digit ZIP code so the forecast can be checked.'); $('#zip').focus(); return; }
+    if (!weather && zip && !/^\d{5}$/.test(zip)) { showFormError('That ZIP code needs 5 digits, or leave it blank.'); $('#zip').focus(); return; }
+    showFormError('');
+
+    // Limits are kept even for regular events, so switching the weather check back on restores them.
+    const data = { title, date, start, end, zip, weather, limits: { ...formLimits } };
+    if (weather) state.settings.lastLimits = { ...formLimits };
+    let message;
+
+    let plan;
+    if (state.editingId) {
+        plan = state.plans.find((x) => x.id === state.editingId);
+        if (plan) {
+            Object.assign(plan, data);
+            if (!weather) { plan.changes = []; plan.lastSnapshot = null; }
+        }
+        message = 'Changes saved';
+    } else {
+        plan = { id: newId(), createdAt: Date.now(), ...data };
+        state.plans.push(plan);
+        message = 'Plan saved';
+    }
+    closePlanDialog();
+
+    const d = parseISO(date);
+    state.view = { year: d.getFullYear(), month: d.getMonth() };
+    save();   // settings (and, without Azure, the plans)
+    const ok = plan ? await persistPlan(plan) : false;
+    render();
+    if (SERVER_MODE) {
+        if (ok) toast(`${message} to Azure`);   // on failure persistPlan already explained
+    } else {
+        toast(ok ? message : `${message}, but only until this view reloads`);
+    }
+    await runForecastCheck();
+}
+
+function deleteEditing() {
+    const idx = state.plans.findIndex((x) => x.id === state.editingId);
+    if (idx < 0) return;
+    const [removed] = state.plans.splice(idx, 1);
+    closePlanDialog();
+    render();
+    removePlanFromServer(removed.id);   // without Azure this just saves
+    toast(`Deleted "${removed.title}"`, 'Undo', async () => {
+        state.plans.splice(Math.min(idx, state.plans.length), 0, removed);
+        await persistPlan(removed);
+        runForecastCheck();
+    });
+}
+
+async function movePlan(id, date, shift) {
+    const p = state.plans.find((x) => x.id === id);
+    if (!p) return;
+    const before = { date: p.date, start: p.start, end: p.end };
+    p.date = date;
+    p.start = shiftTime(p.start, shift);
+    p.end = shiftTime(p.end, shift);
+    if (!(await persistPlan(p))) return;
+    await runForecastCheck();
+    const moved = state.plans.find((x) => x.id === id) || p;
+    toast(`Moved "${moved.title}" to ${fmtDate(moved.date)}, ${fmtTime(moved.start)}`, 'Undo', async () => {
+        Object.assign(moved, before);
+        await persistPlan(moved);
+        runForecastCheck();
+    });
+}
+
+/* ==========================================================================
+   EXTRAS: .ics export, toast
+   ========================================================================== */
+
+function buildICS() {
+    const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+    const dt = (date, time) => `${date.replace(/-/g, '')}T${time.replace(':', '')}00`;
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Weather-Guard//Calendar//EN', 'CALSCALE:GREGORIAN'];
+    for (const p of state.plans) {
+        const t = p.limits;
+        lines.push(
+            'BEGIN:VEVENT',
+            `UID:${p.id}@weather-guard`,
+            `DTSTAMP:${stamp}`,
+            `DTSTART:${dt(p.date, p.start)}`,
+            `DTEND:${dt(p.date, p.end)}`,
+            `SUMMARY:${esc(p.title)}`,
+            p.zip ? `LOCATION:${esc(`ZIP ${p.zip}`)}` : null,
+            isWeather(p) ? `DESCRIPTION:${esc(`Weather limits: ${U.t(t.minTempF)} to ${U.t(t.maxTempF)}, rain up to ${t.maxRain}%, gusts up to ${U.w(t.maxGustMph)}`)}` : null,
+            'END:VEVENT',
+        );
+    }
+    for (let i = lines.length - 1; i >= 0; i--) if (lines[i] == null) lines.splice(i, 1);
+    lines.push('END:VCALENDAR');
+    return lines.join('\r\n');
+}
+
+function openExport() {
+    $('#icsText').value = buildICS();
+    const dlg = $('#exportDialog');
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+}
+
+function downloadICS() {
+    try {
+        const blob = new Blob([$('#icsText').value], { type: 'text/calendar' });
+        const a = h('a', { href: URL.createObjectURL(blob), download: 'weather-guard.ics' });
+        document.body.append(a);
+        a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+    } catch {
+        toast('Download was blocked. Use Copy text instead.');
+    }
+}
+
+async function copyICS() {
+    const ta = $('#icsText');
+    try {
+        await navigator.clipboard.writeText(ta.value);
+        toast('Copied');
+    } catch {
+        ta.select();
+        toast('Text selected. Press Ctrl+C (or ⌘C) to copy.');
+    }
+}
+
+let toastTimer = null;
+function toast(msg, actionLabel, onAction) {
+    const el = $('#toast');
+    const btn = $('#toastAction');
+    $('#toastMsg').textContent = msg;
+    btn.hidden = !actionLabel;
+    btn.textContent = actionLabel || '';
+    btn.onclick = actionLabel ? () => { el.hidden = true; onAction(); } : null;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 6000);
+}
+
+/* ==========================================================================
+   EVENTS (delegated; saving runs from a click, not a form submit, so it
+   works inside sandboxed previews that block form submission)
+   ========================================================================== */
+
+let lastDayClick = { date: null, at: 0 };   // double-click a day to add a plan (the grid re-renders between clicks)
+
+function onClick(e) {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const { action } = el.dataset;
+
+    switch (action) {
+        case 'save': savePlan(); break;
+        case 'units':
+            if (state.settings.units !== el.dataset.units) {
+                state.settings.units = el.dataset.units;
+                save();
+                syncSliders();
+                render();
+            }
+            break;
+        case 'refresh':
+            // With Azure, ask it to run the full check now (this also logs alerts).
+            (SERVER_MODE ? serverCall('POST', '/check').catch(() => {}) : Promise.resolve())
+                .then(() => runForecastCheck({ force: true })).then(() => toast(forecastErrors.size ? "Couldn't update every forecast. Check the plans marked unavailable." : 'Forecast updated'));
+            break;
+        case 'export': openExport(); break;
+        case 'enter-code': openCodeDialog(); break;
+        case 'save-code': saveCode(); break;
+        case 'close-code': $('#codeDialog').close(); break;
+        case 'retry-server': runForecastCheck({ force: true }); break;
+        case 'close-export': $('#exportDialog').close(); break;
+        case 'download-ics': downloadICS(); break;
+        case 'copy-ics': copyICS(); break;
+        case 'edit': startEdit(el.dataset.id); break;
+        case 'new': openNew(el.dataset.date || state.selectedDate); break;
+        case 'close-plan': closePlanDialog(); break;
+        case 'delete': deleteEditing(); break;
+        case 'move': movePlan(el.dataset.id, el.dataset.date, Number(el.dataset.shift)); break;
+        case 'reset-limits': formLimits = { ...DEFAULT_LIMITS }; syncSliders(); break;
+        case 'day': {
+            const iso = el.dataset.date;
+            const now = Date.now();
+            const isDouble = lastDayClick.date === iso && now - lastDayClick.at < 450;
+            lastDayClick = { date: iso, at: isDouble ? 0 : now };
+            if (isDouble) {
+                state.selectedDate = iso;
+                render();
+                if (iso >= localISO()) openNew(iso);
+                break;
+            }
+            state.selectedDate = state.selectedDate === iso ? null : iso;
+            const d = parseISO(iso);
+            if (d.getMonth() !== state.view.month) state.view = { year: d.getFullYear(), month: d.getMonth() };
+            render();
+            break;
+        }
+        case 'clear-filter': state.selectedDate = null; render(); break;
+        case 'prev-month':
+        case 'next-month': {
+            const d = new Date(state.view.year, state.view.month + (action === 'next-month' ? 1 : -1), 1);
+            state.view = { year: d.getFullYear(), month: d.getMonth() };
+            render();
+            break;
+        }
+        case 'this-month': {
+            const d = new Date();
+            state.view = { year: d.getFullYear(), month: d.getMonth() };
+            render();
+            break;
+        }
+    }
+}
+
+function init() {
+    $('#minTemp').addEventListener('input', () => onTempInput('min'));
+    $('#maxTemp').addEventListener('input', () => onTempInput('max'));
+    $('#maxRain').addEventListener('input', () => { formLimits.maxRain = +$('#maxRain').value; updateSliderLabels(); });
+    $('#maxGust').addEventListener('input', () => { formLimits.maxGustMph = U.fromDispW(+$('#maxGust').value); updateSliderLabels(); });
+    $('#weatherOn').addEventListener('change', syncWeatherToggle);
+    $('#blockStorms').addEventListener('change', () => { formLimits.blockStorms = $('#blockStorms').checked; });
+    $('#zip').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 5); });
+
+    // Never let the browser try to submit the form; Enter in a field saves instead.
+    $('#planForm').addEventListener('submit', (e) => { e.preventDefault(); savePlan(); });
+    $('#planForm').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'range') {
+            e.preventDefault();
+            savePlan();
+        }
+    });
+
+    document.addEventListener('click', onClick);
+
+    // Closing the pop-up (Cancel, X, Escape or clicking outside) ends editing.
+    const dlg = $('#planDialog');
+    dlg.addEventListener('close', () => {
+        const wasEditing = state.editingId;
+        state.editingId = null;
+        showFormError('');
+        if (wasEditing) render();
+    });
+    dlg.addEventListener('mousedown', (e) => { dlg.dataset.downOnBackdrop = String(e.target === dlg); });
+    dlg.addEventListener('click', (e) => {
+        if (e.target === dlg && dlg.dataset.downOnBackdrop === 'true') closePlanDialog();
+    });
+
+    load();
+    formLimits = defaultLimits();
+    setDateMin();
+    syncSliders();
+    render();
+    runForecastCheck();
+    // Every minute: fetch any forecast that's 30+ minutes old, otherwise just
+    // refresh the "updated X min ago" text.
+    const tick = () => {
+        const serverDue = SERVER_MODE && (
+            Date.now() - lastServerLoad >= CHECK_INTERVAL_MS ||                          // pick up background changes
+            (state.serverError && state.serverError.status !== 401 && Date.now() - lastServerTry >= RETRY_MS));
+        if (serverDue || activeZips().some(isDue)) runForecastCheck();
+        else renderHeader();
+    };
+    setInterval(tick, TICK_MS);
+    // Browsers slow timers in background tabs, so catch up when the tab is shown again.
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+    $('#codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveCode(); } });
+}
+
+init();
+</script>
+</body>
+</html>

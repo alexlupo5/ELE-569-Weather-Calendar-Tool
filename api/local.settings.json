@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
+    "AzureWebJobsStorage": "",
+    "DATA_STORAGE_CONNECTION": "",
+    "ACCESS_CODE": ""
+  },
+  "Host": {
+    "CORS": "*"
+  }
+}
