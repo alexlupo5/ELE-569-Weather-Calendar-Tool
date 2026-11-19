@@ -34,7 +34,7 @@ api/                            ← the Function App (Node.js)
 
 ## Set up the backend (one time)
 
-You need the storage account you already have (`weatherguardtest`) and about 15 minutes.
+You need the storage account you already have (`weathercalendartool`) and about 15 minutes.
 
 ### 1. Create the Function App
 
@@ -45,13 +45,13 @@ In the [Azure portal](https://portal.azure.com), choose **Create a resource → 
 - **Function App name:** something unique, like `weatherguard-api-alex`
 - **Region:** one your subscription allows (the same as your storage account is easiest)
 - **Runtime stack:** Node.js, **Version:** 20 or 22
-- On the **Storage** tab, pick your existing storage account (`weatherguardtest`).
+- On the **Storage** tab, pick your existing storage account (`weathercalendartool`).
 
 Click **Review + create**, then **Create**. When it's done, open the Function App and copy its **Default domain** from the **Overview** page. It looks like `weatherguard-api-alex-xxxx.eastus2-01.azurewebsites.net`.
 
 ### 2. Tell it where to save data
 
-1. Open your storage account (`weatherguardtest`) and go to **Security + networking → Access keys**. Click **Show** next to the first **Connection string** and copy it.
+1. Open your storage account (`weathercalendartool`) and go to **Security + networking → Access keys**. Click **Show** next to the first **Connection string** and copy it.
 2. Open the Function App and go to **Settings → Environment variables**. Under **App settings**, add:
 
 | Name | Value |
@@ -67,7 +67,7 @@ Click **Apply**, then **Confirm**.
 In the Function App, go to **API → CORS**. Add your website's address with no slash at the end, and click **Save**:
 
 ```
-https://weatherguardtest.z55.web.core.windows.net
+https://weathercalendartool.z55.web.core.windows.net
 ```
 
 ### 4. Upload the backend code
