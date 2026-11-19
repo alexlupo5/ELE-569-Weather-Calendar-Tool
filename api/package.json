@@ -1,0 +1,16 @@
+{
+  "name": "weather-guard-api",
+  "version": "1.0.0",
+  "description": "Forecast API for Weather-Guard Calendar (Azure Functions, Open-Meteo)",
+  "private": true,
+  "main": "src/functions/*.js",
+  "scripts": {
+    "start": "func start"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.5.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
