@@ -74,6 +74,7 @@
     .save-status.off { color: #9a6200; background: #fdf3dc; }
     .credit { text-align: center; font-size: 0.8rem; color: var(--muted); padding-bottom: 0.5rem; }
     .credit a { color: var(--accent); }
+    .banner.demo { background: #fdf3dc; color: #7a5200; }
 
     /* ---------- Layout ---------- */
     .page { max-width: 1400px; margin: 0 auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.5rem; }
@@ -351,9 +352,8 @@
         <section class="panel">
             <details class="alerts">
                 <summary id="alertsSummary">Alert log</summary>
-                <p class="alert-note">
-                    These are the messages the backend would send by text or email. One goes out only when a plan
-                    turns bad or clears up again, so nobody gets pinged every hour.
+                <p class="alert-note" id="alertNote">
+                    A message is logged only when a plan turns bad or clears up again, so nobody gets pinged every hour.
                 </p>
                 <ul class="alert-list" id="alertList"></ul>
             </details>
@@ -472,6 +472,19 @@
     </div>
 </dialog>
 
+<dialog id="codeDialog" aria-labelledby="codeTitle">
+    <h3 id="codeTitle">Enter the access code</h3>
+    <p>This calendar is protected. Enter the access code you set in Azure. It's remembered in this browser.</p>
+    <div class="field">
+        <label for="codeInput">Access code</label>
+        <input type="text" id="codeInput" autocomplete="off">
+    </div>
+    <div class="dialog-actions">
+        <button class="btn" type="button" data-action="close-code">Cancel</button>
+        <button class="btn btn-primary" type="button" data-action="save-code">Continue</button>
+    </div>
+</dialog>
+
 <div class="toast" id="toast" role="status" aria-live="polite" hidden>
     <span id="toastMsg"></span>
     <button type="button" id="toastAction" hidden></button>
@@ -484,9 +497,18 @@
    CONFIG
    ========================================================================== */
 
+/* ---- Azure backend ----------------------------------------------------------
+   Paste your Function App's address here, ending in /api, for example
+   'https://weatherguard-api.azurewebsites.net/api'. Plans are then saved in
+   Azure, and Azure checks the weather every 30 minutes even when this page is
+   closed. Leave it empty to keep plans only in this browser.
+   ----------------------------------------------------------------------------- */
+const API_BASE = '';
+const SERVER_MODE = API_BASE !== '';
+
 const HORIZON_DAYS = 15;                                 // Open-Meteo gives 16 days: today + 15
 const MARGIN = { tempF: 5, rain: 10, gustMph: 5 };       // "close to a limit" margins
-const STORAGE_KEYS = { plans: 'wg.v3.plans', settings: 'wg.v3.settings', alerts: 'wg.v3.alerts', geo: 'wg.v3.geo' };
+const STORAGE_KEYS = { plans: 'wg.v3.plans', settings: 'wg.v3.settings', alerts: 'wg.v3.alerts', geo: 'wg.v3.geo', code: 'wg.v3.code' };
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;               // get fresh forecasts every 30 minutes
 const TICK_MS = 60 * 1000;                               // check once a minute whether one is due
 const RETRY_MS = 5 * 60 * 1000;                          // after a failed fetch, try again in 5 minutes
@@ -517,6 +539,8 @@ const state = {
     settings: { units: 'imperial', lastLimits: null },
     editingId: null,
     selectedDate: null,
+    serverError: null,      // set when the Azure backend can't be reached
+    lastRunAt: null,        // when Azure last ran the background weather check
     view: { year: new Date().getFullYear(), month: new Date().getMonth() },
 };
 
@@ -559,6 +583,8 @@ const Store = {
 let lastSaveOk = Store.available;
 
 function load() {
+    Object.assign(state.settings, Store.read(STORAGE_KEYS.settings) || {});
+    if (SERVER_MODE) return;   // plans and alerts come from Azure (loadFromServer)
     const plans = Store.read(STORAGE_KEYS.plans);
     // Earlier versions added example plans; those are dropped here.
     state.plans = Array.isArray(plans)
@@ -566,10 +592,15 @@ function load() {
         : [];
     const alerts = Store.read(STORAGE_KEYS.alerts);
     state.alerts = Array.isArray(alerts) ? alerts : [];
-    Object.assign(state.settings, Store.read(STORAGE_KEYS.settings) || {});
 }
 
 function save() {
+    if (SERVER_MODE) {
+        // Plans are saved to Azure one at a time (persistPlan); only settings stay here.
+        Store.write(STORAGE_KEYS.settings, state.settings);
+        renderSaveStatus();
+        return !state.serverError;
+    }
     const ok = [
         Store.write(STORAGE_KEYS.plans, state.plans),
         Store.write(STORAGE_KEYS.alerts, state.alerts),
@@ -578,6 +609,97 @@ function save() {
     lastSaveOk = ok;
     renderSaveStatus();
     return ok;
+}
+
+/* ==========================================================================
+   AZURE BACKEND (only used when API_BASE is set)
+   ========================================================================== */
+
+class ServerError extends Error {
+    constructor(message, status) { super(message); this.status = status; }
+}
+
+async function serverCall(method, path, body) {
+    const headers = { Accept: 'application/json' };
+    const code = Store.read(STORAGE_KEYS.code);
+    if (code) headers['x-access-code'] = code;
+    if (body) headers['Content-Type'] = 'application/json';
+    let res;
+    try {
+        res = await fetch(`${API_BASE}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    } catch {
+        throw new ServerError("Can't reach the Weather-Guard server. Check your internet connection.", 0);
+    }
+    let data = null;
+    try { data = await res.json(); } catch { /* not JSON */ }
+    if (!res.ok) throw new ServerError((data && data.error) || `The server returned an error (${res.status}).`, res.status);
+    return data;
+}
+
+let lastServerLoad = 0;   // when plans were last loaded from Azure
+let lastServerTry = 0;    // when the last attempt was made (successful or not)
+
+// Get every plan, the alert log and the last background check time from Azure.
+async function loadFromServer() {
+    lastServerTry = Date.now();
+    try {
+        const data = await serverCall('GET', '/plans');
+        lastServerLoad = Date.now();
+        state.plans = data.plans;
+        state.alerts = data.alerts;
+        state.lastRunAt = data.lastRunAt;
+        state.serverError = null;
+        return true;
+    } catch (err) {
+        state.serverError = err;
+        if (err.status === 401) openCodeDialog();
+        return false;
+    }
+}
+
+const planPayload = (p) => ({ title: p.title, date: p.date, start: p.start, end: p.end, zip: p.zip, weather: p.weather !== false, limits: p.limits });
+
+// Save one plan. In browser-only mode that's just save().
+async function persistPlan(p) {
+    if (!SERVER_MODE) return save();
+    try {
+        const { plan } = await serverCall('PUT', `/plans/${encodeURIComponent(p.id)}`, planPayload(p));
+        const i = state.plans.findIndex((x) => x.id === p.id);
+        if (i >= 0) state.plans[i] = plan; else state.plans.push(plan);
+        state.serverError = null;
+        return true;
+    } catch (err) {
+        toast(`Couldn't save to Azure: ${err.message}`);
+        if (err.status === 401) openCodeDialog();
+        await loadFromServer();   // show what's actually saved
+        return false;
+    }
+}
+
+async function removePlanFromServer(id) {
+    if (!SERVER_MODE) return save();
+    try {
+        await serverCall('DELETE', `/plans/${encodeURIComponent(id)}`);
+        return true;
+    } catch (err) {
+        toast(`Couldn't delete in Azure: ${err.message}`);
+        await loadFromServer();
+        return false;
+    }
+}
+
+function openCodeDialog() {
+    const dlg = $('#codeDialog');
+    if (dlg.open) return;
+    $('#codeInput').value = Store.read(STORAGE_KEYS.code) || '';
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    setTimeout(() => $('#codeInput').focus(), 0);
+}
+
+async function saveCode() {
+    Store.write(STORAGE_KEYS.code, $('#codeInput').value.trim());
+    $('#codeDialog').close();
+    await runForecastCheck({ force: true });
 }
 
 /* ==========================================================================
@@ -692,7 +814,7 @@ const THUNDER_CODES = new Set([95, 96, 97, 99]);
 async function fetchFromApi(zip) {
     let res;
     try {
-        res = await fetch(`/api/forecast?zip=${encodeURIComponent(zip)}`, { headers: { Accept: 'application/json' } });
+        res = await fetch(`${API_BASE || '/api'}/forecast?zip=${encodeURIComponent(zip)}`, { headers: { Accept: 'application/json' } });
     } catch {
         throw new SourceUnavailable('No API on this page');
     }
@@ -990,6 +1112,9 @@ async function runForecastCheck({ force = false } = {}) {
     if (checking) return;
     checking = true;
     try {
+        // With Azure, pick up the latest plans, statuses and alerts first
+        // (the background check may have changed them while the page was closed).
+        if (SERVER_MODE && !(await loadFromServer())) return;
         const due = activeZips().filter((zip) => force || isDue(zip));
 
         await Promise.all(due.map(async (zip) => {
@@ -1004,7 +1129,8 @@ async function runForecastCheck({ force = false } = {}) {
             }
         }));
 
-        for (const plan of state.plans) {
+        // With Azure, the background check tracks changes and alerts; the page only displays them.
+        for (const plan of SERVER_MODE ? [] : state.plans) {
             const ev = evaluate(plan);
             if (!['safe', 'watch', 'breach'].includes(ev.status)) { plan.lastStatus = ev.status; continue; }
 
@@ -1075,6 +1201,19 @@ function render() {
 
 function renderSaveStatus() {
     const el = $('#saveStatus');
+    if (SERVER_MODE) {
+        if (state.serverError) {
+            el.className = 'save-status off';
+            el.textContent = state.serverError.status === 401 ? 'Access code needed' : "Can't reach Azure";
+            el.title = state.serverError.message;
+        } else {
+            el.className = 'save-status ok';
+            el.textContent = 'Saved in Azure';
+            el.title = 'Plans are saved in Azure, which checks the weather every 30 minutes, even when this page is closed.'
+                + (state.lastRunAt ? ` Last background check: ${fmtClock(state.lastRunAt)}.` : '');
+        }
+        return;
+    }
     if (Store.available && lastSaveOk) {
         el.className = 'save-status ok';
         el.textContent = 'Saved in this browser';
@@ -1093,7 +1232,12 @@ function renderHeader() {
     const updated = oldestForecastAt();
     const lc = $('#lastChecked');
     lc.textContent = updated ? `Weather updated ${fmtClock(updated)} (${fmtAgo(updated)})` : '';
-    lc.title = updated ? `Forecasts refresh every 30 minutes. Next update around ${fmtClock(updated + CHECK_INTERVAL_MS)}.` : '';
+    lc.title = !updated ? '' : SERVER_MODE
+        ? `Azure checks the weather every 30 minutes, even when this page is closed.${state.lastRunAt ? ` Last background check: ${fmtClock(state.lastRunAt)}.` : ''}`
+        : `Forecasts refresh every 30 minutes while this page is open. Next update around ${fmtClock(updated + CHECK_INTERVAL_MS)}.`;
+    $('#alertNote').textContent = SERVER_MODE
+        ? 'Azure checks every plan every 30 minutes, even when this page is closed, and logs a message when a plan turns bad or clears up again.'
+        : 'A message is logged only when a plan turns bad or clears up again, so nobody gets pinged every hour.';
     renderSaveStatus();
     renderSourceStatus();
 }
@@ -1177,10 +1321,23 @@ function renderAgenda(evals) {
     $('#clearFilterBtn').hidden = !sel;
     $('#agendaAddBtn').hidden = !!(sel && sel < localISO());
 
+    if (SERVER_MODE && state.serverError) {
+        box.append(h('div', { class: 'banner demo' },
+            h('span', {}, state.serverError.message),
+            h('button', { type: 'button', class: 'btn-link', dataset: { action: state.serverError.status === 401 ? 'enter-code' : 'retry-server' } },
+                state.serverError.status === 401 ? 'Enter access code' : 'Try again')));
+    }
+
     const plans = sel ? state.plans.filter((p) => p.date === sel) : state.plans;
     const key = (p) => `${p.date} ${p.start}`;
     const upcoming = plans.filter((p) => evals.get(p.id).status !== 'past').sort((a, b) => key(a).localeCompare(key(b)));
     const past = plans.filter((p) => evals.get(p.id).status === 'past').sort((a, b) => key(b).localeCompare(key(a)));
+
+    if (SERVER_MODE && !lastServerLoad) {
+        // Nothing loaded yet: either still loading, or the banner above explains the problem.
+        if (!state.serverError) box.append(h('p', { class: 'note', style: 'margin-top:0.75rem' }, 'Loading your plans from Azure…'));
+        return;
+    }
 
     if (!upcoming.length && !past.length) {
         box.append(h('div', { class: 'empty' },
@@ -1479,25 +1636,32 @@ async function savePlan() {
     if (weather) state.settings.lastLimits = { ...formLimits };
     let message;
 
+    let plan;
     if (state.editingId) {
-        const p = state.plans.find((x) => x.id === state.editingId);
-        if (p) {
-            Object.assign(p, data);
-            if (!weather) { p.changes = []; p.lastSnapshot = null; }
+        plan = state.plans.find((x) => x.id === state.editingId);
+        if (plan) {
+            Object.assign(plan, data);
+            if (!weather) { plan.changes = []; plan.lastSnapshot = null; }
         }
-        closePlanDialog();
         message = 'Changes saved';
     } else {
-        state.plans.push({ id: newId(), createdAt: Date.now(), ...data });
-        closePlanDialog();
+        plan = { id: newId(), createdAt: Date.now(), ...data };
+        state.plans.push(plan);
         message = 'Plan saved';
     }
+    closePlanDialog();
 
     const d = parseISO(date);
     state.view = { year: d.getFullYear(), month: d.getMonth() };
-    const ok = save();
+    save();   // settings (and, without Azure, the plans)
+    const ok = plan ? await persistPlan(plan) : false;
+    render();
+    if (SERVER_MODE) {
+        if (ok) toast(`${message} to Azure`);   // on failure persistPlan already explained
+    } else {
+        toast(ok ? message : `${message}, but only until this view reloads`);
+    }
     await runForecastCheck();
-    toast(ok ? message : `${message}, but only until this view reloads`);
 }
 
 function deleteEditing() {
@@ -1505,11 +1669,11 @@ function deleteEditing() {
     if (idx < 0) return;
     const [removed] = state.plans.splice(idx, 1);
     closePlanDialog();
-    save();
     render();
-    toast(`Deleted "${removed.title}"`, 'Undo', () => {
+    removePlanFromServer(removed.id);   // without Azure this just saves
+    toast(`Deleted "${removed.title}"`, 'Undo', async () => {
         state.plans.splice(Math.min(idx, state.plans.length), 0, removed);
-        save();
+        await persistPlan(removed);
         runForecastCheck();
     });
 }
@@ -1521,11 +1685,12 @@ async function movePlan(id, date, shift) {
     p.date = date;
     p.start = shiftTime(p.start, shift);
     p.end = shiftTime(p.end, shift);
-    save();
+    if (!(await persistPlan(p))) return;
     await runForecastCheck();
-    toast(`Moved "${p.title}" to ${fmtDate(p.date)}, ${fmtTime(p.start)}`, 'Undo', () => {
-        Object.assign(p, before);
-        save();
+    const moved = state.plans.find((x) => x.id === id) || p;
+    toast(`Moved "${moved.title}" to ${fmtDate(moved.date)}, ${fmtTime(moved.start)}`, 'Undo', async () => {
+        Object.assign(moved, before);
+        await persistPlan(moved);
         runForecastCheck();
     });
 }
@@ -1623,9 +1788,15 @@ function onClick(e) {
             }
             break;
         case 'refresh':
-            runForecastCheck({ force: true }).then(() => toast(forecastErrors.size ? "Couldn't update every forecast. Check the plans marked unavailable." : 'Forecast updated'));
+            // With Azure, ask it to run the full check now (this also logs alerts).
+            (SERVER_MODE ? serverCall('POST', '/check').catch(() => {}) : Promise.resolve())
+                .then(() => runForecastCheck({ force: true })).then(() => toast(forecastErrors.size ? "Couldn't update every forecast. Check the plans marked unavailable." : 'Forecast updated'));
             break;
         case 'export': openExport(); break;
+        case 'enter-code': openCodeDialog(); break;
+        case 'save-code': saveCode(); break;
+        case 'close-code': $('#codeDialog').close(); break;
+        case 'retry-server': runForecastCheck({ force: true }); break;
         case 'close-export': $('#exportDialog').close(); break;
         case 'download-ics': downloadICS(); break;
         case 'copy-ics': copyICS(); break;
@@ -1711,12 +1882,16 @@ function init() {
     // Every minute: fetch any forecast that's 30+ minutes old, otherwise just
     // refresh the "updated X min ago" text.
     const tick = () => {
-        if (activeZips().some(isDue)) runForecastCheck();
+        const serverDue = SERVER_MODE && (
+            Date.now() - lastServerLoad >= CHECK_INTERVAL_MS ||                          // pick up background changes
+            (state.serverError && state.serverError.status !== 401 && Date.now() - lastServerTry >= RETRY_MS));
+        if (serverDue || activeZips().some(isDue)) runForecastCheck();
         else renderHeader();
     };
     setInterval(tick, TICK_MS);
     // Browsers slow timers in background tabs, so catch up when the tab is shown again.
     document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+    $('#codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveCode(); } });
 }
 
 init();
