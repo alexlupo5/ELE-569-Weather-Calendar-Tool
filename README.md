@@ -1,6 +1,11 @@
 # Weather-Guard Calendar (ELE 569 Weather Calendar Tool)
 
-A calendar that checks the hourly forecast for each plan and warns you when the weather is outside the limits you set. Forecasts come from [Open-Meteo](https://open-meteo.com/) (free, no API key) through a small Azure Function, and the site is hosted on Azure Static Web Apps.
+A calendar that checks the hourly forecast for each plan and warns you when the weather is outside the limits you set. Forecasts come from [Open-Meteo](https://open-meteo.com/), which is free and needs no API key.
+
+The site is a single file, `src/index.html`. It can be hosted two ways on Azure:
+
+- **Azure Storage static website** (what we use now). Upload `index.html` and you're done. The browser looks up each ZIP and calls Open-Meteo itself. This works on Azure for Students.
+- **Azure Static Web Apps**, which also runs the optional backend in `api/` for server-side caching. Azure for Students subscriptions are often blocked from creating these by a region policy.
 
 ```
 weather-guard/
@@ -18,16 +23,26 @@ weather-guard/
 
 ## How it works
 
-1. The page asks `/api/forecast?zip=02816` for each ZIP code that has upcoming plans.
-2. The Function looks up the ZIP's coordinates with Open-Meteo's geocoding API (Zippopotam.us is the backup), then gets a 16-day hourly forecast: temperature, rain chance, wind, gusts and weather code.
-3. It caches each forecast for 30 minutes, so plans in the same ZIP and repeat visits don't call Open-Meteo again.
+1. For each ZIP code with upcoming plans, the page first tries `/api/forecast?zip=…`.
+2. On a storage website there is no `/api`, so the page does the work itself. It looks up the ZIP's coordinates with Open-Meteo's geocoding API (Zippopotam.us is the backup), then gets a 16-day hourly forecast: temperature, rain chance, wind, gusts and weather code.
+3. Coordinates are remembered in the browser, and forecasts are reused for 15 minutes. All plans in the same ZIP share one forecast.
 4. The page compares every hour of each plan against its limits.
 
-If the page can't find `/api` (for example, you double-click `index.html`), it calls Open-Meteo directly from the browser. If that fails too, it shows made-up weather and says **Demo weather** in the header, so you'll always know which one you're looking at.
+The header says **Live forecast** once real data has loaded. If the weather service can't be reached or a ZIP doesn't exist, the plan says **Forecast unavailable** with the reason. The page never shows made-up weather.
+
+## Put it on an Azure Storage static website
+
+1. In the [Azure portal](https://portal.azure.com), choose **Create a resource → Storage account**. Use **Primary service:** Azure Blob Storage, **Performance:** Standard, **Redundancy:** LRS, and a region your subscription allows.
+2. Open the storage account, then go to **Data management → Static website**. Set it to **Enabled**, enter `index.html` as the index document, and click **Save**. The **Primary endpoint** is the site's address.
+3. Go to **Data storage → Containers → $web**, click **Upload**, and choose `src/index.html`. When updating, tick **Overwrite if files already exist**.
+
+That's all. `staticwebapp.config.json` and the `api/` folder aren't used on a storage website.
 
 ## Run it on your Mac
 
-You need Node.js 20 or newer, the Static Web Apps CLI and Azure Functions Core Tools.
+To try just the page, double-click `src/index.html`. It works the same as on the storage website.
+
+To run the page together with the backend, you need Node.js 20 or newer, the Static Web Apps CLI and Azure Functions Core Tools.
 
 ```bash
 # one-time setup
@@ -47,9 +62,9 @@ swa start src --api-location api
 
 Open **http://localhost:4280**. The header should say **Live forecast**. To check the API by itself, open http://localhost:4280/api/forecast?zip=02816 and you should see JSON.
 
-## Put it on Azure
+## Put it on Azure Static Web Apps (optional, with the backend)
 
-Azure Static Web Apps' **Free** plan includes the API, so this costs nothing.
+Azure Static Web Apps' **Free** plan includes the API, so this costs nothing. If you get "Resource was disallowed by Azure", your subscription's region policy doesn't allow Static Web Apps; use the storage website instead.
 
 1. **Push the folder to GitHub.** Create a new repository and push the whole `weather-guard` folder (the `node_modules` folder is ignored).
 2. **Create the Static Web App.** In the [Azure portal](https://portal.azure.com), choose **Create a resource → Static Web App** and fill in:
@@ -66,7 +81,7 @@ After that, every push to `main` redeploys the site automatically.
 
 ## Good to know
 
-- **Open-Meteo's free API is for non-commercial use.** That covers a personal or class project. For commercial use, buy an API key and add it in the Static Web App under **Settings → Environment variables** as `OPEN_METEO_API_KEY`. The Function switches to the paid servers on its own.
+- **Open-Meteo's free API is for non-commercial use.** That covers a personal or class project. Commercial use needs a paid API key. The backend supports one through an `OPEN_METEO_API_KEY` setting; a key should never be put in `index.html`, because anyone can read it there.
 - **Plans are saved in each person's browser** (localStorage) for now. To share plans across devices, add a database (Azure Table Storage or Cosmos DB) and replace the three methods in the `Store` object near the top of the page's script with calls to new API routes such as `GET /api/plans` and `PUT /api/plans`.
-- **Alerts are only logged on the page.** Sending real texts or emails needs a timer-triggered Function that checks every plan hourly and sends through Azure Communication Services. Managed Static Web Apps functions only support HTTP triggers, so that piece would go in a separate Azure Functions app.
+- **Alerts are only logged on the page.** Sending real texts or emails needs a timer-triggered Function that checks every plan hourly and sends through Azure Communication Services. That piece would go in a separate Azure Functions app, which also works on Azure for Students.
 - **Forecast range:** Open-Meteo goes 16 days ahead. Plans further out show "No forecast yet" until they're in range. Rain chance isn't always available for the last days of the range, and the page shows "Not yet" when it's missing.

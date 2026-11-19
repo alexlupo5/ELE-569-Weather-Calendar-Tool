@@ -74,7 +74,6 @@
     .save-status.off { color: #9a6200; background: #fdf3dc; }
     .credit { text-align: center; font-size: 0.8rem; color: var(--muted); padding-bottom: 0.5rem; }
     .credit a { color: var(--accent); }
-    .banner.demo { background: #fdf3dc; color: #7a5200; }
 
     /* ---------- Layout ---------- */
     .page { max-width: 1400px; margin: 0 auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.5rem; }
@@ -558,15 +557,14 @@ const Store = {
 let lastSaveOk = Store.available;
 
 function load() {
-    const firstVisit = !Store.has(STORAGE_KEYS.plans);
     const plans = Store.read(STORAGE_KEYS.plans);
+    // Earlier versions added example plans; those are dropped here.
     state.plans = Array.isArray(plans)
-        ? plans.filter((p) => p && p.id && p.title && p.date && p.start && p.end && p.limits && typeof p.limits.minTempF === 'number')
+        ? plans.filter((p) => p && !p.example && p.id && p.title && p.date && p.start && p.end && p.limits && typeof p.limits.minTempF === 'number')
         : [];
     const alerts = Store.read(STORAGE_KEYS.alerts);
     state.alerts = Array.isArray(alerts) ? alerts : [];
     Object.assign(state.settings, Store.read(STORAGE_KEYS.settings) || {});
-    if (firstVisit) addExamples();
 }
 
 function save() {
@@ -661,11 +659,11 @@ function rangeText(hours) {
    Sources, tried in this order:
    1. Azure:  GET /api/forecast?zip=02816. The Function in /api looks up the
               ZIP, calls Open-Meteo, caches the result and returns it.
-   2. Direct: if this page has no /api (you opened index.html as a file, or
-              it's on a plain static host), the browser calls Open-Meteo
-              itself. Open-Meteo allows that.
-   3. Demo:   if neither can be reached (a sandboxed preview, no internet),
-              made-up weather is shown and the header says "Demo weather".
+   2. Direct: if this page has no /api (an Azure Storage static website,
+              or index.html opened as a file), the browser looks up each ZIP
+              and calls Open-Meteo itself. Open-Meteo allows that.
+   If neither answers, the plan says "Forecast unavailable". The page never
+   shows made-up weather.
 
    Every source returns the same shape:
      { zip, place, timezone, issuedAt, days: { 'YYYY-MM-DD': [hourly rows] } }
@@ -704,15 +702,41 @@ async function getJsonDirect(url) {
     return res.json();
 }
 
+// ZIP -> { latitude, longitude, place }. Open-Meteo's geocoder accepts postal
+// codes; Zippopotam.us is the backup if Open-Meteo has no exact match.
+async function lookupZip(zip) {
+    let loose = null;
+    let reached = false;
+    try {
+        const geo = await getJsonDirect(`${OPEN_METEO.geocode}?${new URLSearchParams({ name: zip, count: '10', countryCode: 'US', language: 'en', format: 'json' })}`);
+        reached = true;
+        const results = geo.results || [];
+        const exact = results.find((r) => (r.postcodes || []).includes(zip));
+        if (exact) return { latitude: exact.latitude, longitude: exact.longitude, place: [exact.name, exact.admin1].filter(Boolean).join(', ') };
+        if (results[0]) loose = { latitude: results[0].latitude, longitude: results[0].longitude, place: [results[0].name, results[0].admin1].filter(Boolean).join(', ') };
+    } catch (err) {
+        if (err instanceof SourceUnavailable) throw err;   // no internet / blocked: don't guess
+    }
+    try {
+        const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
+        reached = true;
+        if (res.ok) {
+            const place = (await res.json()).places?.[0];
+            if (place) return { latitude: Number(place.latitude), longitude: Number(place.longitude), place: `${place['place name']}, ${place['state abbreviation']}` };
+        }
+    } catch {
+        // backup unavailable; fall through
+    }
+    if (loose) return loose;
+    if (!reached) throw new SourceUnavailable("Can't reach the ZIP lookup");
+    throw new ForecastError(`Couldn't find ZIP code ${zip}. Check the number and edit the plan.`);
+}
+
 async function fetchDirect(zip) {
     const known = Store.read(STORAGE_KEYS.geo) || {};
     let loc = known[zip];
     if (!loc) {
-        const geo = await getJsonDirect(`${OPEN_METEO.geocode}?${new URLSearchParams({ name: zip, count: '10', countryCode: 'US', language: 'en', format: 'json' })}`);
-        const results = geo.results || [];
-        const hit = results.find((r) => (r.postcodes || []).includes(zip)) || results[0];
-        if (!hit) throw new ForecastError(`Couldn't find ZIP code ${zip}.`);
-        loc = { latitude: hit.latitude, longitude: hit.longitude, place: [hit.name, hit.admin1].filter(Boolean).join(', ') };
+        loc = await lookupZip(zip);
         known[zip] = loc;
         Store.write(STORAGE_KEYS.geo, known);
     }
@@ -755,7 +779,7 @@ function hourlyToDays(hourly) {
 }
 
 const WeatherProvider = {
-    mode: null,      // 'api' | 'direct' | 'demo', settled by the first answer
+    mode: null,      // 'api' | 'direct', settled by the first answer
     async getForecast(zip) {
         if (this.mode === null || this.mode === 'api') {
             try {
@@ -774,11 +798,9 @@ const WeatherProvider = {
                 return fc;
             } catch (err) {
                 if (!(err instanceof SourceUnavailable)) { this.mode = 'direct'; throw err; }
-                if (this.mode === 'direct') throw new ForecastError("Can't reach Open-Meteo right now.");
             }
         }
-        this.mode = 'demo';
-        return demoForecast(zip);
+        throw new ForecastError("Can't reach the weather service. Check your internet connection, then click Check forecast.");
     },
 };
 
@@ -797,61 +819,6 @@ function describeCode(c) {
     return null;
 }
 
-/* ---------- Demo weather (only when no real source can be reached) ---------- */
-
-let demoRun = 1;
-
-function hashStr(s) {
-    let h = 2166136261 >>> 0;
-    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-    return h >>> 0;
-}
-function seeded(seed) {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
-
-function mockDay(zip, date, run) {
-    const r = seeded(hashStr(`${zip}|${date}`));
-    const p = seeded(hashStr(`${zip}|${date}|run${run}`));
-    const d = parseISO(date);
-    const doy = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
-    const mean = 52 - 22 * Math.cos(2 * Math.PI * (doy - 15) / 365)
-               + ((hashStr(zip) % 9) - 4) + (r() * 16 - 8) + (p() * 6 - 3);
-    const amp = 6 + r() * 6;
-    const rainy = r() < 0.4;
-    const peakH = 6 + Math.floor(r() * 14);
-    const width = 1.5 + r() * 3;
-    const peak = 55 + r() * 40;
-    const stormy = rainy && r() < 0.35;
-    const rainShift = p() * 24 - 12;
-    const windBase = Math.max(2, 4 + r() * 12 + (p() * 6 - 3));
-    const hours = [];
-    for (let h = 0; h < 24; h++) {
-        const tempF = mean + amp * Math.cos(2 * Math.PI * (h - 15) / 24) + (r() - 0.5) * 2;
-        let rain = rainy ? peak * Math.exp(-(((h - peakH) / width) ** 2)) + 5 : r() * 12;
-        rain = Math.round(Math.max(0, Math.min(100, rain + rainShift + (r() - 0.5) * 6)));
-        const storm = stormy && rain >= 60;
-        const windMph = Math.max(0, windBase + 4 * Math.sin(Math.PI * (h - 6) / 12) + r() * 3 + (storm ? 10 : 0));
-        const gustMph = windMph * 1.35 + r() * 6 + (storm ? 12 : 0);
-        const code = storm ? 95 : rain >= 60 ? 61 : rain >= 30 ? 3 : 1;
-        hours.push({ hour: h, tempF, rain, windMph, gustMph, storm, code });
-    }
-    return hours;
-}
-
-function demoForecast(zip) {
-    const today = localISO();
-    const days = {};
-    for (let i = 0; i <= HORIZON_DAYS; i++) days[addDays(today, i)] = mockDay(zip, addDays(today, i), demoRun);
-    return { zip, place: null, issuedAt: Date.now(), source: 'demo', days };
-}
 
 /* ==========================================================================
    EVALUATION (comparisons always in °F / mph)
@@ -983,7 +950,9 @@ function changeText(c) {
 }
 
 let checking = false;
-async function runForecastCheck() {
+// force: true refetches every ZIP (the "Check forecast" button). Otherwise
+// only ZIPs with no forecast yet, or one older than CHECK_INTERVAL_MS, are fetched.
+async function runForecastCheck({ force = false } = {}) {
     if (checking) return;
     checking = true;
     try {
@@ -991,7 +960,12 @@ async function runForecastCheck() {
             .filter((p) => isWeather(p) && daysBetween(localISO(), p.date) <= HORIZON_DAYS && planEndDate(p) >= new Date())
             .map((p) => p.zip))];
 
-        await Promise.all(zips.map(async (zip) => {
+        const due = zips.filter((zip) => {
+            const fc = forecastCache.get(zip);
+            return force || !fc || Date.now() - fc.issuedAt > CHECK_INTERVAL_MS;
+        });
+
+        await Promise.all(due.map(async (zip) => {
             try {
                 forecastCache.set(zip, await WeatherProvider.getForecast(zip));
                 forecastErrors.delete(zip);
@@ -1099,11 +1073,7 @@ function renderSourceStatus() {
     const el = $('#sourceStatus');
     const mode = WeatherProvider.mode;
     el.hidden = !mode;
-    if (mode === 'demo') {
-        el.className = 'save-status off';
-        el.textContent = 'Demo weather';
-        el.title = "This page can't reach Open-Meteo, so the forecasts are made up. Run it locally or on Azure for real data.";
-    } else if (mode) {
+    if (mode) {
         el.className = 'save-status ok';
         el.textContent = 'Live forecast';
         el.title = mode === 'api' ? 'From Open-Meteo, through your Azure API' : 'From Open-Meteo, fetched by this page';
@@ -1178,17 +1148,6 @@ function renderAgenda(evals) {
     $('#clearFilterBtn').hidden = !sel;
     $('#agendaAddBtn').hidden = !!(sel && sel < localISO());
 
-    if (WeatherProvider.mode === 'demo') {
-        box.append(h('div', { class: 'banner demo' },
-            h('span', {}, "These forecasts are made up because this page can't reach Open-Meteo. Run it locally or on Azure to see real weather.")));
-    }
-
-    if (!sel && state.plans.some((p) => p.example)) {
-        box.append(h('div', { class: 'banner' },
-            h('span', {}, 'These are example plans so you can see how it works.'),
-            h('button', { type: 'button', class: 'btn-link', dataset: { action: 'clear-examples' } }, 'Remove examples')));
-    }
-
     const plans = sel ? state.plans.filter((p) => p.date === sel) : state.plans;
     const key = (p) => `${p.date} ${p.start}`;
     const upcoming = plans.filter((p) => evals.get(p.id).status !== 'past').sort((a, b) => key(a).localeCompare(key(b)));
@@ -1200,8 +1159,7 @@ function renderAgenda(evals) {
                 ? 'Nothing planned this day.'
                 : 'No plans yet.'),
             h('div', { class: 'agenda-tools' },
-                sel && sel < localISO() ? null : h('button', { type: 'button', class: 'btn btn-primary', dataset: { action: 'new', date: sel || '' } }, sel ? 'Add a plan on this day' : '+ Add plan'),
-                !sel ? h('button', { type: 'button', class: 'btn', dataset: { action: 'examples' } }, 'Show example plans') : null)));
+                sel && sel < localISO() ? null : h('button', { type: 'button', class: 'btn btn-primary', dataset: { action: 'new', date: sel || '' } }, sel ? 'Add a plan on this day' : '+ Add plan'))));
         return;
     }
 
@@ -1246,7 +1204,7 @@ function renderItem(p, ev) {
                 p.zip ? h('span', {}, forecastCache.get(p.zip)?.place ? `${forecastCache.get(p.zip).place} (${p.zip})` : `ZIP ${p.zip}`) : null,
                 ev.status === 'past' ? h('span', {}, fmtDate(p.date)) : null,
                 ev.confidence ? h('span', {}, `${ev.confidence} confidence`) : null,
-                p.example ? h('span', { class: 'tag' }, 'Example') : null)),
+            )),
         h('div', { class: 'item-actions' },
             h('span', { class: 'pill' }, STATUS_LABEL[ev.status]),
             h('button', { type: 'button', class: 'btn-link', dataset: { action: 'edit', id: p.id }, 'aria-label': `Edit ${p.title}` }, 'Edit'))));
@@ -1491,7 +1449,6 @@ async function savePlan() {
         const p = state.plans.find((x) => x.id === state.editingId);
         if (p) {
             Object.assign(p, data);
-            delete p.example;
             if (!weather) { p.changes = []; p.lastSnapshot = null; }
         }
         closePlanDialog();
@@ -1540,25 +1497,8 @@ async function movePlan(id, date, shift) {
 }
 
 /* ==========================================================================
-   EXTRAS: examples, .ics export, toast
+   EXTRAS: .ics export, toast
    ========================================================================== */
-
-function addExamples() {
-    const today = localISO();
-    const mk = (title, offset, start, end, zip, limits, weather = true) => ({
-        id: newId(), createdAt: Date.now(), example: true, title, date: addDays(today, offset), start, end, zip, weather,
-        limits: { ...DEFAULT_LIMITS, ...limits },
-    });
-    state.plans.push(
-        mk('Morning hike', 1, '09:00', '12:00', '02881', { minTempF: 40 }),
-        mk('Backyard cookout', 2, '16:00', '20:00', '02816', { minTempF: 55, maxRain: 30 }),
-        mk('Long run', 3, '07:00', '08:30', '02881', { minTempF: 30, maxRain: 50, maxGustMph: 30 }),
-        mk('Dentist appointment', 2, '10:00', '11:00', '', {}, false),
-        mk('Book club', 4, '18:00', '20:00', '', {}, false),
-        mk('Soccer game', 5, '10:00', '11:30', '02816', { minTempF: 45 }),
-        mk("Mia's birthday at the park", 12, '11:00', '15:00', '02882', { minTempF: 60, maxRain: 20 }),
-    );
-}
 
 function buildICS() {
     const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
@@ -1649,8 +1589,7 @@ function onClick(e) {
             }
             break;
         case 'refresh':
-            if (WeatherProvider.mode === 'demo') demoRun += 1;
-            runForecastCheck().then(() => toast(forecastErrors.size ? "Couldn't update every forecast. Check the plans marked unavailable." : 'Forecast updated'));
+            runForecastCheck({ force: true }).then(() => toast(forecastErrors.size ? "Couldn't update every forecast. Check the plans marked unavailable." : 'Forecast updated'));
             break;
         case 'export': openExport(); break;
         case 'close-export': $('#exportDialog').close(); break;
@@ -1662,16 +1601,6 @@ function onClick(e) {
         case 'delete': deleteEditing(); break;
         case 'move': movePlan(el.dataset.id, el.dataset.date, Number(el.dataset.shift)); break;
         case 'reset-limits': formLimits = { ...DEFAULT_LIMITS }; syncSliders(); break;
-        case 'examples': addExamples(); save(); runForecastCheck(); break;
-        case 'clear-examples': {
-            const removed = state.plans.filter((p) => p.example);
-            state.plans = state.plans.filter((p) => !p.example);
-            if (state.editingId && !state.plans.some((p) => p.id === state.editingId)) closePlanDialog();
-            save();
-            render();
-            toast(`Removed ${removed.length} example plans`, 'Undo', () => { state.plans.push(...removed); save(); runForecastCheck(); });
-            break;
-        }
         case 'day': {
             const iso = el.dataset.date;
             const now = Date.now();
@@ -1745,7 +1674,7 @@ function init() {
     syncSliders();
     render();
     runForecastCheck();
-    setInterval(runForecastCheck, CHECK_INTERVAL_MS);
+    setInterval(() => runForecastCheck(), CHECK_INTERVAL_MS);
 }
 
 init();
